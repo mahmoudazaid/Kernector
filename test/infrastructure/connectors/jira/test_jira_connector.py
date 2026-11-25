@@ -107,7 +107,7 @@ def test_lists_selected_project_issues_with_stable_identity_and_revision() -> No
     assert first.extra["project_key"] == "KAN"
     assert first.extra["issue_key"] == "KAN-1"
     assert first.extra["url"] == "https://acme.atlassian.net/browse/KAN-1"
-    assert "kernector.jira.links_fingerprint.v1" in first.extra
+    assert "kernector.links_fingerprint.v1" in first.extra
     assert client.search_calls == [('project = "KAN" ORDER BY key ASC', None)]
 
 
@@ -527,7 +527,7 @@ def test_data_center_documents_use_the_server_id_without_cloud_metadata() -> Non
     assert document.extra["project_key"] == "KAN"
     assert document.extra["issue_key"] == "KAN-1"
     assert document.extra["url"] == "https://jira.example.com/jira/browse/KAN-1"
-    assert "kernector.jira.links_fingerprint.v1" in document.extra
+    assert "kernector.links_fingerprint.v1" in document.extra
     assert "cloud_id" not in document.extra
     assert "cloud_id" not in source.metadata.extra
     assert source.metadata.extra["jira_instance_id"] == SERVER_ID

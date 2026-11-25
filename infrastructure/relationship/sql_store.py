@@ -369,21 +369,45 @@ class SqlRelationshipStore:
         *,
         part_key: str | None = None,
     ) -> tuple[Relationship, ...]:
-        token = unresolved_token(key, part_key=part_key)
         connection = _connection.connect(self._path)
         try:
-            rows = connection.execute(
-                """
-                SELECT * FROM relationships
-                WHERE workspace_id = ?
-                  AND (
-                    subject_token = ?
-                    OR object_token = ?
-                  )
-                ORDER BY project_id COLLATE BINARY, relationship_id COLLATE BINARY
-                """,
-                (self._workspace_id, token, token),
-            ).fetchall()
+            if part_key is not None:
+                token = unresolved_token(key, part_key=part_key)
+                rows = connection.execute(
+                    """
+                    SELECT * FROM relationships
+                    WHERE workspace_id = ?
+                      AND (
+                        subject_token = ?
+                        OR object_token = ?
+                      )
+                    ORDER BY project_id COLLATE BINARY, relationship_id COLLATE BINARY
+                    """,
+                    (self._workspace_id, token, token),
+                ).fetchall()
+            else:
+                # Include every part variant for this key (u:key\n, u:key\npart).
+                prefix = f"u:{key}\n"
+                rows = connection.execute(
+                    """
+                    SELECT * FROM relationships
+                    WHERE workspace_id = ?
+                      AND (
+                        subject_token = ?
+                        OR subject_token LIKE ?
+                        OR object_token = ?
+                        OR object_token LIKE ?
+                      )
+                    ORDER BY project_id COLLATE BINARY, relationship_id COLLATE BINARY
+                    """,
+                    (
+                        self._workspace_id,
+                        prefix,
+                        f"{prefix}%",
+                        prefix,
+                        f"{prefix}%",
+                    ),
+                ).fetchall()
             return tuple(
                 self._relationship_from_row(connection, row) for row in rows
             )
@@ -560,12 +584,9 @@ class SqlRelationshipStore:
         aliases: Sequence[str],
     ) -> tuple[str, ...]:
         tokens = [endpoint_token(endpoint)]
+        part_key = endpoint.part_key
         for key in aliases:
-            token = unresolved_token(key)
-            if token not in tokens:
-                tokens.append(token)
-        if isinstance(endpoint, UnresolvedKey):
-            token = unresolved_token(endpoint.key)
+            token = unresolved_token(key, part_key=part_key)
             if token not in tokens:
                 tokens.append(token)
         return tuple(tokens)
@@ -833,6 +854,44 @@ class SqlRelationshipStore:
             """,
             (self._workspace_id, drop_id),
         )
+        self._retain_newest_evidence_per_source(connection, keep_id)
+
+    def _retain_newest_evidence_per_source(
+        self, connection: sqlite3.Connection, relationship_id: str
+    ) -> None:
+        """Drop superseded revisions so merged edges keep one revision per source."""
+        rows = connection.execute(
+            """
+            SELECT source_type, source_id, revision
+            FROM relationship_evidence
+            WHERE workspace_id = ? AND relationship_id = ?
+            """,
+            (self._workspace_id, relationship_id),
+        ).fetchall()
+        newest: dict[tuple[str, str], str] = {}
+        for row in rows:
+            key = (row["source_type"], row["source_id"])
+            current = newest.get(key)
+            if current is None or row["revision"] > current:
+                newest[key] = row["revision"]
+        for (source_type, source_id), revision in newest.items():
+            connection.execute(
+                """
+                DELETE FROM relationship_evidence
+                WHERE workspace_id = ?
+                  AND relationship_id = ?
+                  AND source_type = ?
+                  AND source_id = ?
+                  AND revision != ?
+                """,
+                (
+                    self._workspace_id,
+                    relationship_id,
+                    source_type,
+                    source_id,
+                    revision,
+                ),
+            )
 
     def _relationship_from_row(
         self, connection: sqlite3.Connection, row: sqlite3.Row

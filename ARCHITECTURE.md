@@ -724,11 +724,11 @@ build it.
   all `kernector.*` keys before ingest, fingerprinting, and chunk metadata;
   relationship recording uses the unstripped document. Connector `revision`
   stays the Jira `updated` value so legacy READY rows are not re-embedded;
-  listing puts `kernector.jira.links_fingerprint.v1` on
+  listing puts the neutral `kernector.links_fingerprint.v1` on
   `ConnectorDocument.extra` so link-only edits still re-enter the record
-  path via the skip/retry watermark compare. A per-document watermark makes
-  failed recording retryable after a successful READY ingest without
-  re-embedding.
+  path via the skip/retry watermark compare. A per-document watermark
+  (links fingerprint, revision, projects, mapping fingerprint) makes failed
+  recording retryable after a successful READY ingest without re-embedding.
 - **Reads.** `GET /api/v1/projects/{project_id}/artifacts/{key}/relationships`
   and MCP `core.project_relationships` (default-deny allowlist) return origin,
   verification, freshness, evidence, and each end's contexts. Edges are

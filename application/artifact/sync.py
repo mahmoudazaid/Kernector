@@ -43,6 +43,8 @@ class RelationshipRecorder(Protocol):
 
     def clear_watermark(self, reference: SourceReference) -> None: ...
 
+    def resolve_arriving(self, source: SourceDocument) -> None: ...
+
     def supports(self, reference: SourceReference) -> bool: ...
 
 
@@ -141,9 +143,12 @@ class SyncArtifactDescriptors:
         if self._relationships is None:
             return
         try:
-            if not self._relationships.needs_record(source, revision=revision):
-                return
-            self._relationships.execute(source, revision=revision)
+            if self._relationships.needs_record(source, revision=revision):
+                self._relationships.execute(source, revision=revision)
+            else:
+                # Arrival resolution must still run when recording is skipped
+                # (for example a target with no project association).
+                self._relationships.resolve_arriving(source)
         except Exception as error:
             # Ingest already succeeded; watermark stays unchanged so the next
             # sync can retry (revision / project / fingerprint compare).

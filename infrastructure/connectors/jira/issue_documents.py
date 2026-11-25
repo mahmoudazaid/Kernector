@@ -143,6 +143,7 @@ class JiraIssueDocuments:
         summary = _required_text(fields, "summary")
         issue_type = _name(fields.get("issuetype"))
         links_payload = build_provider_links_payload(issue_key=key, fields=fields)
+        encoded_links = encode_provider_links(links_payload)
         return SourceDocument(
             SourceMetadata(
                 reference=document.reference,
@@ -159,7 +160,10 @@ class JiraIssueDocuments:
                     "jira_project_key": project_key,
                     "jira_site_url": site.site_url,
                     "jira_updated_at": _required_text(fields, "updated"),
-                    PROVIDER_LINKS_EXTRA_KEY: encode_provider_links(links_payload),
+                    PROVIDER_LINKS_EXTRA_KEY: encoded_links,
+                    LINKS_FINGERPRINT_EXTRA_KEY: fingerprint_provider_links(
+                        encoded_links
+                    ),
                 },
             ),
             self._markdown(project_key, key, fields),

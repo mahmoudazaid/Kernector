@@ -43,11 +43,15 @@ def _jira_raw_from_document(source: SourceDocument) -> dict[str, object] | None:
 
 
 def _jira_link_mapping(settings: Settings) -> JiraLinkTypeMapping:
-    """Build the link-type table, including the configured Xray link type."""
+    """Build the link-type table, including the configured Xray link type.
+
+    Defaults win over ``XRAY_LINK_TYPE`` so a custom type cannot overwrite
+    built-in meanings such as ``Relates`` or ``Blocks``.
+    """
     mapping: dict[str, tuple[str, str]] = dict(DEFAULT_TYPE_MAP)
     link_type = settings.xray.link_type.strip()
     if link_type:
-        mapping[link_type.casefold()] = ("tests", "subject")
+        mapping.setdefault(link_type.casefold(), ("tests", "subject"))
     return JiraLinkTypeMapping(by_name=mapping)
 
 
@@ -67,15 +71,15 @@ def build_record_explicit_relationships(
     settings: Settings,
 ) -> RecordExplicitRelationships:
     resolve = build_resolve_projects_for_source(settings)
+    mapping = _jira_link_mapping(settings)
     return RecordExplicitRelationships(
         build_relationship_store(settings),
         build_artifact_index(settings),
         project_ids_for=resolve.execute,
-        extractors={
-            SourceType.JIRA: JiraExplicitLinkExtractor(_jira_link_mapping(settings))
-        },
+        extractors={SourceType.JIRA: JiraExplicitLinkExtractor(mapping)},
         raw_from_document=_jira_raw_from_document,
         extractor_id=EXTRACTOR_ID,
+        mapping_fingerprint=mapping.fingerprint(),
     )
 
 

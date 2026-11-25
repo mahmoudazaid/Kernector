@@ -12,7 +12,8 @@ from domain.knowledge import SourceDocument
 from domain.relationship.models import ProviderLink
 
 PROVIDER_LINKS_EXTRA_KEY = "kernector.jira.provider_links.v1"
-LINKS_FINGERPRINT_EXTRA_KEY = "kernector.jira.links_fingerprint.v1"
+# Must match application.relationship.transport.LINKS_FINGERPRINT_EXTRA_KEY.
+LINKS_FINGERPRINT_EXTRA_KEY = "kernector.links_fingerprint.v1"
 EXTRACTOR_ID = "jira_explicit_links"
 _PROVIDER_LINKS_VERSION = 1
 
@@ -168,6 +169,14 @@ class JiraLinkTypeMapping:
         else:
             mapping = {key.casefold(): value for key, value in self.by_name.items()}
         object.__setattr__(self, "by_name", mapping)
+
+    def fingerprint(self) -> str:
+        """Return a stable hash of the configured name → relation table."""
+        payload = "\n".join(
+            f"{name}={relation}:{role}"
+            for name, (relation, role) in sorted(self.by_name.items())
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     def resolve(
         self,

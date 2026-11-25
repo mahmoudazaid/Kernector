@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 
 from application.artifact.lookup import _matching_part
@@ -97,33 +97,50 @@ class ListArtifactRelationships:
         seen: set[str] = set()
         for descriptor in visible:
             part = _matching_part(descriptor, key)
+            edge_groups: list[
+                tuple[ArtifactRef, tuple[str, ...], tuple[Relationship, ...]]
+            ] = []
             if part is not None:
-                ref = ArtifactRef(descriptor.reference, part_key=part.part_key)
-                alias_parts = [key, part.part_key]
-                if part.operation_id is not None:
-                    alias_parts.append(part.operation_id)
-                aliases = tuple(dict.fromkeys(alias_parts))
-                edge_groups = (
-                    self._store.list_for_artifact(
-                        project_id, ref, filters, aliases=aliases
-                    ),
-                    # Whole-artifact edges stay reachable when listing by a part.
-                    self._store.list_for_artifact(
-                        project_id,
-                        ArtifactRef(descriptor.reference),
-                        filters,
-                        aliases=(),
-                    ),
+                part_ref = ArtifactRef(descriptor.reference, part_key=part.part_key)
+                part_keys = tuple(
+                    dict.fromkeys(
+                        item
+                        for item in (key, part.part_key, part.operation_id)
+                        if item is not None
+                    )
+                )
+                edge_groups.append(
+                    (
+                        part_ref,
+                        part_keys,
+                        self._store.list_for_artifact(
+                            project_id, part_ref, filters, aliases=part_keys
+                        ),
+                    )
+                )
+                whole_ref = ArtifactRef(descriptor.reference)
+                edge_groups.append(
+                    (
+                        whole_ref,
+                        (key,),
+                        self._store.list_for_artifact(
+                            project_id, whole_ref, filters, aliases=()
+                        ),
+                    )
                 )
             else:
                 ref = ArtifactRef(descriptor.reference)
                 aliases = tuple(dict.fromkeys((key, *descriptor.external_keys)))
-                edge_groups = (
-                    self._store.list_for_artifact(
-                        project_id, ref, filters, aliases=aliases
-                    ),
+                edge_groups.append(
+                    (
+                        ref,
+                        (key, *descriptor.external_keys),
+                        self._store.list_for_artifact(
+                            project_id, ref, filters, aliases=aliases
+                        ),
+                    )
                 )
-            for edges in edge_groups:
+            for listed, listed_keys, edges in edge_groups:
                 for edge in edges:
                     if edge.relationship_id in seen:
                         continue
@@ -134,8 +151,8 @@ class ListArtifactRelationships:
                     views.append(
                         self._to_view(
                             edge,
-                            listed=ref,
-                            listed_key=key,
+                            listed=listed,
+                            listed_keys=listed_keys,
                             evidence=kept_evidence,
                             contexts_for=self._contexts_for,
                         )
@@ -165,11 +182,11 @@ class ListArtifactRelationships:
         edge: Relationship,
         *,
         listed: ArtifactRef,
-        listed_key: str,
+        listed_keys: Sequence[str],
         evidence: tuple[EvidenceRef, ...],
         contexts_for: Callable[[ArtifactRef | UnresolvedKey], tuple[str, ...]],
     ) -> RelationshipView:
-        listed_is_object = self._same_endpoint(edge.object, listed, listed_key)
+        listed_is_object = self._same_endpoint(edge.object, listed, listed_keys)
         relation_type = edge.relation_type
         direction = "outward"
         if listed_is_object:
@@ -227,12 +244,14 @@ class ListArtifactRelationships:
         self,
         endpoint: ArtifactRef | UnresolvedKey,
         listed: ArtifactRef,
-        listed_key: str,
+        listed_keys: Sequence[str],
     ) -> bool:
         if isinstance(endpoint, UnresolvedKey):
-            return endpoint.key == listed_key
+            return endpoint.key in listed_keys or (
+                endpoint.part_key is not None and endpoint.part_key in listed_keys
+            )
         if endpoint.reference != listed.reference:
             return False
         if listed.part_key is None:
-            return True
+            return endpoint.part_key is None
         return endpoint.part_key == listed.part_key

@@ -9,7 +9,6 @@ from datetime import UTC, datetime
 
 from application.relationship.transport import (
     LINKS_FINGERPRINT_EXTRA_KEY,
-    PROVIDER_LINKS_EXTRA_KEY,
     TRANSPORT_KEY_PREFIX,
 )
 from domain.artifact.models import ArtifactRef
@@ -30,14 +29,11 @@ logger = logging.getLogger(__name__)
 ProjectIdsForSource = Callable[[SourceReference], tuple[str, ...]]
 RawFromDocument = Callable[[SourceDocument], Mapping[str, object] | None]
 DEFAULT_EXTRACTOR_ID = "explicit_links"
-_WATERMARK_VERSION = "v1"
+_WATERMARK_VERSION = "v2"
 
 
 def links_fingerprint_for(source: SourceDocument) -> str:
     """Return a stable fingerprint of provider link transport on ``source``."""
-    payload = source.metadata.extra.get(PROVIDER_LINKS_EXTRA_KEY)
-    if isinstance(payload, str) and payload:
-        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
     listed = source.metadata.extra.get(LINKS_FINGERPRINT_EXTRA_KEY)
     if isinstance(listed, str) and listed:
         return listed
@@ -53,22 +49,33 @@ def encode_record_watermark(
     links_fingerprint: str,
     revision: str,
     project_ids: tuple[str, ...],
+    *,
+    mapping_fingerprint: str = "",
 ) -> str:
-    """Encode fingerprint, revision, and resolved project ids for skip checks."""
+    """Encode fingerprint, revision, projects, and mapping for skip checks."""
     projects = ",".join(sorted(project_ids))
-    return f"{_WATERMARK_VERSION}\n{links_fingerprint}\n{revision}\n{projects}"
+    return (
+        f"{_WATERMARK_VERSION}\n{links_fingerprint}\n{revision}\n"
+        f"{projects}\n{mapping_fingerprint}"
+    )
 
 
 def parse_record_watermark(
     raw: str,
-) -> tuple[str, str, tuple[str, ...]] | None:
+) -> tuple[str, str, tuple[str, ...], str] | None:
     """Parse a watermark; return None when the payload is legacy or corrupt."""
-    parts = raw.split("\n", 3)
-    if len(parts) != 4 or parts[0] != _WATERMARK_VERSION:
-        return None
-    _, fingerprint, revision, projects = parts
-    project_ids = tuple(item for item in projects.split(",") if item)
-    return fingerprint, revision, project_ids
+    parts = raw.split("\n", 4)
+    if len(parts) == 5 and parts[0] == _WATERMARK_VERSION:
+        _, fingerprint, revision, projects, mapping_fingerprint = parts
+        project_ids = tuple(item for item in projects.split(",") if item)
+        return fingerprint, revision, project_ids, mapping_fingerprint
+    # Legacy v1: fingerprint, revision, projects
+    legacy = raw.split("\n", 3)
+    if len(legacy) == 4 and legacy[0] == "v1":
+        _, fingerprint, revision, projects = legacy
+        project_ids = tuple(item for item in projects.split(",") if item)
+        return fingerprint, revision, project_ids, ""
+    return None
 
 
 class RecordExplicitRelationships:
@@ -83,6 +90,7 @@ class RecordExplicitRelationships:
         extractors: Mapping[str, ExplicitLinkExtractor],
         raw_from_document: RawFromDocument,
         extractor_id: str = DEFAULT_EXTRACTOR_ID,
+        mapping_fingerprint: str = "",
         now: Callable[[], str] | None = None,
     ) -> None:
         self._store = store
@@ -91,6 +99,7 @@ class RecordExplicitRelationships:
         self._extractors = dict(extractors)
         self._raw_from_document = raw_from_document
         self._extractor_id = extractor_id
+        self._mapping_fingerprint = mapping_fingerprint
         self._now = now or (lambda: datetime.now(UTC).isoformat())
 
     def needs_record(self, source: SourceDocument, *, revision: str) -> bool:
@@ -99,7 +108,10 @@ class RecordExplicitRelationships:
         if not project_ids:
             return False
         expected = encode_record_watermark(
-            links_fingerprint_for(source), revision, project_ids
+            links_fingerprint_for(source),
+            revision,
+            project_ids,
+            mapping_fingerprint=self._mapping_fingerprint,
         )
         return self._store.get_record_watermark(source.reference) != expected
 
@@ -110,9 +122,11 @@ class RecordExplicitRelationships:
         revision: str,
         links_fingerprint: str | None = None,
     ) -> bool:
-        """Return whether a skipped source should re-attempt relationship recording."""
+        """Return whether a skipped source should re-attempt relationship work."""
         if not self.supports(reference):
             return False
+        if self._needs_arrival_resolve(reference):
+            return True
         project_ids = self._project_ids_for(reference)
         if not project_ids:
             return False
@@ -122,7 +136,9 @@ class RecordExplicitRelationships:
         parsed = parse_record_watermark(stored)
         if parsed is None:
             return True
-        stored_fingerprint, stored_revision, stored_projects = parsed
+        stored_fingerprint, stored_revision, stored_projects, stored_mapping = parsed
+        if stored_mapping != self._mapping_fingerprint:
+            return True
         if stored_revision != revision:
             return True
         if stored_projects != tuple(sorted(project_ids)):
@@ -146,8 +162,12 @@ class RecordExplicitRelationships:
         """Return whether an extractor is registered for ``reference``."""
         return str(reference.source_type) in self._extractors
 
+    def resolve_arriving(self, source: SourceDocument) -> None:
+        """Upgrade unresolved endpoints that match ``source`` without recording."""
+        self._resolve_arriving_artifact(source=source, seen_at=self._now())
+
     def execute(self, source: SourceDocument, *, revision: str) -> None:
-        """Record links for ``source``; set watermark only on success."""
+        """Record links for ``source``; set watermark only after full success."""
         extractor = self._extractors.get(str(source.reference.source_type))
         if extractor is None:
             return
@@ -155,8 +175,14 @@ class RecordExplicitRelationships:
         fingerprint = links_fingerprint_for(source)
         seen_at = self._now()
         instance_prefix = _source_instance_prefix(source.reference.source_id)
+        watermark: str | None = None
         if project_ids:
-            watermark = encode_record_watermark(fingerprint, revision, project_ids)
+            watermark = encode_record_watermark(
+                fingerprint,
+                revision,
+                project_ids,
+                mapping_fingerprint=self._mapping_fingerprint,
+            )
             if self._store.get_record_watermark(source.reference) != watermark:
                 raw = self._raw_from_document(source)
                 links: tuple[ProviderLink, ...] = ()
@@ -194,10 +220,25 @@ class RecordExplicitRelationships:
                             subject_aliases=subject_aliases,
                             object_aliases=object_aliases,
                         )
-                self._store.set_record_watermark(source.reference, watermark)
         # Resolve pending unresolved ends across the workspace even when this
         # source has no project association of its own.
         self._resolve_arriving_artifact(source=source, seen_at=seen_at)
+        if watermark is not None:
+            self._store.set_record_watermark(source.reference, watermark)
+
+    def _needs_arrival_resolve(self, reference: SourceReference) -> bool:
+        descriptor = self._index.get(reference)
+        if descriptor is None:
+            return False
+        for key in descriptor.external_keys:
+            if self._store.list_unresolved_for_key(key):
+                return True
+        for part in descriptor.parts:
+            if self._store.list_unresolved_for_key(
+                part.part_key, part_key=part.part_key
+            ):
+                return True
+        return False
 
     def _resolve_arriving_artifact(
         self,
@@ -207,13 +248,23 @@ class RecordExplicitRelationships:
     ) -> None:
         """Upgrade unresolved endpoints that match this document's keys."""
         descriptor = self._index.get(source.reference)
-        if descriptor is None or not descriptor.external_keys:
+        if descriptor is None:
             return
         arriving_prefix = _source_instance_prefix(source.reference.source_id)
-        ref = ArtifactRef(source.reference)
-        for key in descriptor.external_keys:
-            pending = self._store.list_unresolved_for_key(key)
+        keys: list[tuple[str, str | None]] = [
+            (key, None) for key in descriptor.external_keys
+        ]
+        for part in descriptor.parts:
+            keys.append((part.part_key, part.part_key))
+            if part.operation_id is not None:
+                keys.append((part.operation_id, part.part_key))
+        seen_edges: set[str] = set()
+        for key, part_key in keys:
+            pending = self._store.list_unresolved_for_key(key, part_key=part_key)
             for edge in pending:
+                if edge.relationship_id in seen_edges:
+                    continue
+                seen_edges.add(edge.relationship_id)
                 evidence = edge.evidence[0]
                 evidence_prefix = _source_instance_prefix(evidence.source.source_id)
                 if (
@@ -222,10 +273,8 @@ class RecordExplicitRelationships:
                     and arriving_prefix != evidence_prefix
                 ):
                     continue
-                subject = (
-                    ref if self._endpoint_matches(edge.subject, key) else edge.subject
-                )
-                obj = ref if self._endpoint_matches(edge.object, key) else edge.object
+                subject = self._upgrade_endpoint(edge.subject, key, source)
+                obj = self._upgrade_endpoint(edge.object, key, source)
                 if subject is edge.subject and obj is edge.object:
                     continue
                 self._store.upsert_from_evidence(
@@ -248,10 +297,17 @@ class RecordExplicitRelationships:
                     object_aliases=(key,) if isinstance(obj, ArtifactRef) else (),
                 )
 
-    def _endpoint_matches(
-        self, endpoint: ArtifactRef | UnresolvedKey, key: str
-    ) -> bool:
-        return isinstance(endpoint, UnresolvedKey) and endpoint.key == key
+    def _upgrade_endpoint(
+        self,
+        endpoint: ArtifactRef | UnresolvedKey,
+        key: str,
+        source: SourceDocument,
+    ) -> ArtifactRef | UnresolvedKey:
+        if not isinstance(endpoint, UnresolvedKey):
+            return endpoint
+        if endpoint.key != key and endpoint.part_key != key:
+            return endpoint
+        return ArtifactRef(source.reference, part_key=endpoint.part_key)
 
     def _resolve_endpoint(
         self,
