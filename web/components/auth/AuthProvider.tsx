@@ -13,12 +13,14 @@ import {
   logoutRequest,
   meRequest,
 } from "@/lib/api/auth";
+import { ApiError } from "@/lib/api/errors";
 import {
   beginAccountSwitch,
   clearAuthSession,
   getAuthSession,
   setAuthPreferences,
   setAuthSession,
+  setPreferencesStatus,
   subscribeAuthSession,
 } from "@/lib/auth/session-store";
 import type { AuthSessionState } from "@/lib/auth/types";
@@ -39,20 +41,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const refresh = useCallback(async () => {
-    const me = await meRequest();
-    if (me === null) {
-      clearAuthSession();
-      return;
-    }
-    setAuthSession({
-      user: { user_id: me.user_id, username: me.username },
-      csrfToken: me.csrf_token,
-    });
+    const generation = getAuthSession().generation;
+    setPreferencesStatus("loading");
     try {
-      const prefs = await getPreferencesRequest();
-      setAuthPreferences(prefs);
+      const me = await meRequest();
+      if (getAuthSession().generation !== generation) {
+        return;
+      }
+      if (me === null) {
+        clearAuthSession();
+        return;
+      }
+      setAuthSession({
+        user: { user_id: me.user_id, username: me.username },
+        csrfToken: me.csrf_token,
+        preferences: null,
+        preferencesStatus: "loading",
+        generation,
+      });
+      try {
+        const prefs = await getPreferencesRequest();
+        setAuthPreferences(prefs, { generation, status: "ready" });
+      } catch {
+        setAuthPreferences(null, { generation, status: "ready" });
+      }
     } catch {
-      setAuthPreferences(null);
+      // Non-401 /me failures must not reject unhandled on every page.
+      if (getAuthSession().generation === generation) {
+        setPreferencesStatus("ready");
+      }
     }
   }, []);
 
@@ -61,31 +78,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   const signIn = useCallback(async (username: string, password: string) => {
-    beginAccountSwitch();
+    const generation = beginAccountSwitch();
     const me = await loginRequest(username, password);
+    if (getAuthSession().generation !== generation) {
+      return;
+    }
     setAuthSession({
       user: { user_id: me.user_id, username: me.username },
       csrfToken: me.csrf_token,
       preferences: null,
+      preferencesStatus: "loading",
+      generation,
     });
     try {
       const prefs = await getPreferencesRequest();
-      setAuthPreferences(prefs);
+      setAuthPreferences(prefs, { generation, status: "ready" });
     } catch {
-      setAuthPreferences(null);
+      setAuthPreferences(null, { generation, status: "ready" });
     }
   }, []);
 
   const signOut = useCallback(async () => {
-    const csrf = getAuthSession().csrfToken;
-    if (csrf) {
-      try {
-        await logoutRequest(csrf);
-      } catch {
-        // Still clear local state.
-      }
+    const current = getAuthSession();
+    const csrf = current.csrfToken;
+    if (!csrf) {
+      clearAuthSession();
+      return;
     }
-    clearAuthSession();
+    try {
+      await logoutRequest(csrf);
+      clearAuthSession();
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        clearAuthSession();
+        return;
+      }
+      // Keep session so the user can retry; surface the failure.
+      throw error;
+    }
   }, []);
 
   return (

@@ -101,7 +101,7 @@ def test_login_generic_failure_and_lockout(auth_env) -> None:
         assert response.status_code == 401
         assert response.json()["code"] == "unauthorized"
         assert "wrong" not in response.text
-        assert "alice" not in response.json().get("detail", "").lower() or True
+        assert "alice" not in response.json().get("detail", "").lower()
     # locked — even correct password fails generically
     locked = client.post(
         "/api/v1/auth/login",

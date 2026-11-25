@@ -1,18 +1,26 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   adjustSetCookieForBrowser,
   browserRequestIsHttps,
+  proxyAuthApi,
   redactAuthSecrets,
 } from "@/lib/server/auth-proxy";
 
 describe("auth-proxy", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
   it("redacts passwords, session cookies, and CSRF tokens", () => {
     const redacted = redactAuthSecrets(
-      "password=super-secret kernector_session=opaque-session-id X-CSRF-Token: csrf-val",
+      'password=super-secret {"password": "hunter2", "csrf_token": "abc"} kernector_session=opaque-session-id X-CSRF-Token: csrf-val',
     );
     expect(redacted).not.toContain("super-secret");
+    expect(redacted).not.toContain("hunter2");
     expect(redacted).not.toContain("opaque-session-id");
     expect(redacted).not.toContain("csrf-val");
+    expect(redacted).not.toContain('"abc"');
     expect(redacted).toContain("[REDACTED]");
   });
 
@@ -39,5 +47,32 @@ describe("auth-proxy", () => {
       secure: false,
     });
     expect(clear).not.toMatch(/;\s*Secure/i);
+  });
+
+  it("proxies 204 logout with null body and Set-Cookie", async () => {
+    const clearCookie =
+      "kernector_session=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        const headers = new Headers({
+          "cache-control": "no-store",
+        });
+        headers.append("set-cookie", clearCookie);
+        return new Response(null, { status: 204, headers });
+      }),
+    );
+
+    const response = await proxyAuthApi(
+      new Request("http://localhost:3000/api/v1/auth/logout", {
+        method: "POST",
+      }),
+      "/api/v1/auth/logout",
+      { method: "POST" },
+    );
+
+    expect(response.status).toBe(204);
+    expect(response.headers.get("set-cookie")).toContain("kernector_session=");
+    expect(await response.text()).toBe("");
   });
 });

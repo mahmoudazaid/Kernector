@@ -5,9 +5,8 @@ export async function GET(request: Request): Promise<Response> {
   try {
     return await proxyAuthApi(request, "/api/v1/auth/me", { method: "GET" });
   } catch (error) {
-    void redactAuthSecrets(
-      error instanceof Error ? error.message : "backend unavailable",
-    );
+    const raw = error instanceof Error ? error.message : "backend unavailable";
+    console.error("[auth/me]", redactAuthSecrets(raw));
     return NextResponse.json(
       {
         type: "https://kernector.dev/problems/backend_unavailable",

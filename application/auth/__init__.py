@@ -1,5 +1,6 @@
 """Application use cases for local auth (#182)."""
 
+from application.auth.login import Login, LoginFailedError, LoginResult
 from application.auth.preferences import (
     PreferenceView,
     catalog_allows_pair,
@@ -8,6 +9,9 @@ from application.auth.preferences import (
 )
 
 __all__ = [
+    "Login",
+    "LoginFailedError",
+    "LoginResult",
     "PreferenceView",
     "catalog_allows_pair",
     "project_preferences",

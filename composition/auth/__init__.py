@@ -6,13 +6,16 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
+from application.auth.login import Login, LoginFailedError, LoginResult
 from application.errors import ConfigurationError
 from domain.auth.csrf import csrf_tokens_match, derive_csrf_token
+from domain.auth.ports import AuthStore
 from domain.auth.principal import Principal
 from infrastructure.auth.errors import AuthStoreError, DuplicateUsernameError
 from infrastructure.auth.models import StoredPreferences, StoredUser
 from infrastructure.auth.sql_store import SqlAuthStore
-from infrastructure.config import AuthSettings, Settings, load_settings
+from infrastructure.config import AuthSettings, Settings
+from composition.container import load_runtime_settings
 
 
 @lru_cache(maxsize=1)
@@ -20,9 +23,9 @@ def _auth_store_for_path(path: str) -> SqlAuthStore:
     return SqlAuthStore(Path(path))
 
 
-def build_auth_store(settings: Settings | None = None) -> SqlAuthStore:
-    """Return the process auth SQLite store."""
-    resolved = settings if settings is not None else load_settings()
+def build_auth_store(settings: Settings | None = None) -> AuthStore:
+    """Return the process auth SQLite store (as the AuthStore port)."""
+    resolved = settings if settings is not None else load_runtime_settings()
     return _auth_store_for_path(str(resolved.auth.sql_path))
 
 
@@ -49,8 +52,20 @@ def create_local_user(
 
 def auth_settings(settings: Settings | None = None) -> AuthSettings:
     """Return auth settings from *settings* or the process env."""
-    resolved = settings if settings is not None else load_settings()
+    resolved = settings if settings is not None else load_runtime_settings()
     return resolved.auth
+
+
+def build_login(settings: Settings | None = None) -> Login:
+    """Return the login use case wired to the process auth store."""
+    resolved = settings if settings is not None else load_runtime_settings()
+    auth = resolved.auth
+    return Login(
+        store=build_auth_store(resolved),
+        max_failures=auth.login_max_failures,
+        lockout_seconds=auth.login_lockout_seconds,
+        session_ttl_seconds=auth.session_ttl_seconds,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,7 +82,7 @@ def derive_session_csrf(settings: AuthSettings, session_id: str) -> str:
 
 
 def resolve_session(
-    store: SqlAuthStore,
+    store: AuthStore,
     settings: AuthSettings,
     session_id: str | None,
 ) -> ResolvedSession | None:
@@ -93,16 +108,34 @@ def require_csrf(presented: str | None, expected: str) -> bool:
 
 
 def get_preferences(
-    store: SqlAuthStore, user_id: str
+    store: AuthStore, user_id: str
 ) -> StoredPreferences | None:
     return store.get_preferences(user_id)
 
 
 def put_preferences(
-    store: SqlAuthStore,
+    store: AuthStore,
     user_id: str,
     *,
     provider: str | None,
     model: str | None,
 ) -> StoredPreferences:
     return store.put_preferences(user_id, provider=provider, model=model)
+
+
+__all__ = [
+    "Login",
+    "LoginFailedError",
+    "LoginResult",
+    "ResolvedSession",
+    "auth_settings",
+    "build_auth_store",
+    "build_login",
+    "clear_auth_store_cache",
+    "create_local_user",
+    "derive_session_csrf",
+    "get_preferences",
+    "put_preferences",
+    "require_csrf",
+    "resolve_session",
+]

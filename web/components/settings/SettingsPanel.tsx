@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useState, startTransition, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  startTransition,
+  type ReactNode,
+} from "react";
 import { LoadingState } from "@/components/states/LoadingState";
 import { Button } from "@/components/ui/Button";
 import { SoftSelect } from "@/components/ui/SoftSelect";
@@ -27,6 +34,7 @@ import { putPreferencesRequest } from "@/lib/api/auth";
 import {
   getAuthSession,
   setAuthPreferences,
+  subscribeAuthSession,
 } from "@/lib/auth/session-store";
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -164,11 +172,8 @@ function defaultsFromCatalog(
   };
 }
 
-function persist(selection: SelectionState): void {
-  const auth = getAuthSession();
-  if (auth.user === null) {
-    // Anonymous: localStorage only. Signed-in users keep settings locally for
-    // generation knobs but provider/model also go to the server preferences API.
+function persistLocal(selection: SelectionState, signedIn: boolean): void {
+  if (!signedIn) {
     saveRuntimeSettings({
       provider: selection.provider,
       model: selection.model,
@@ -176,21 +181,14 @@ function persist(selection: SelectionState): void {
     });
     return;
   }
-  saveRuntimeSettings({
-    provider: selection.provider,
-    model: selection.model,
-    settings: selection.settings,
-  });
-  if (auth.csrfToken) {
-    void putPreferencesRequest(
-      auth.csrfToken,
-      selection.provider,
-      selection.model,
-    )
-      .then((prefs) => setAuthPreferences(prefs))
-      .catch(() => {
-        /* keep local selection; server may reject stale pairs */
-      });
+  // Signed-in: never write provider/model to the anonymous key (ADR 0013 §8).
+  const existing = loadRuntimeSettings();
+  if (existing) {
+    saveRuntimeSettings({
+      provider: existing.provider,
+      model: existing.model,
+      settings: selection.settings,
+    });
   }
 }
 
@@ -208,20 +206,36 @@ export function SettingsPanel({
     loading: catalogLoading,
     reload,
   } = useRuntimeCatalog(apiBaseUrl, loadCatalog);
+  const auth = useSyncExternalStore(
+    subscribeAuthSession,
+    getAuthSession,
+    getAuthSession,
+  );
   const [selection, setSelection] = useState<SelectionState | null>(null);
   const [selectionForCatalog, setSelectionForCatalog] =
     useState<RuntimeSettingsResponse | null>(null);
+  const [seededForAuthGen, setSeededForAuthGen] = useState<number | null>(null);
+  const [prefsError, setPrefsError] = useState<string | null>(null);
   const [probeOutcome, setProbeOutcome] = useState<ProbeOutcome>({
     kind: "idle",
   });
   const [probeLoading, setProbeLoading] = useState(false);
   const [probeNonce, setProbeNonce] = useState(0);
+  const putSeqRef = useRef(0);
 
-  if (catalog !== selectionForCatalog) {
+  const prefsReady =
+    auth.user === null || auth.preferencesStatus === "ready";
+  const needsReseed =
+    catalog !== null &&
+    (catalog !== selectionForCatalog ||
+      (auth.user !== null && seededForAuthGen !== auth.generation));
+
+  if (needsReseed && prefsReady) {
     if (catalog) {
-      const authPrefs = getAuthSession().preferences;
+      const authPrefs = auth.preferences;
       const storedLocal = loadRuntimeSettings();
       const storedFromAuth =
+        auth.user !== null &&
         authPrefs !== null &&
         authPrefs.usable &&
         authPrefs.provider !== null &&
@@ -231,11 +245,43 @@ export function SettingsPanel({
               model: authPrefs.model,
               settings: storedLocal?.settings ?? {},
             }
-          : storedLocal;
-      const next = defaultsFromCatalog(catalog, storedFromAuth);
+          : auth.user === null
+            ? storedLocal
+            : storedLocal
+              ? {
+                  provider: storedLocal.provider,
+                  model: storedLocal.model,
+                  settings: storedLocal.settings,
+                }
+              : null;
+      // Missing/stale auth prefs: fall back to catalog defaults, not localStorage pair.
+      const seedSource =
+        auth.user !== null &&
+        (authPrefs === null ||
+          !authPrefs.usable ||
+          authPrefs.provider === null ||
+          authPrefs.model === null)
+          ? {
+              provider: undefined,
+              model: undefined,
+              settings: storedLocal?.settings ?? {},
+            }
+          : storedFromAuth;
+      const next = defaultsFromCatalog(
+        catalog,
+        seedSource
+          ? {
+              provider: seedSource.provider ?? "",
+              model: seedSource.model ?? "",
+              settings: seedSource.settings ?? {},
+            }
+          : null,
+      );
       setSelection(next);
       setSelectionForCatalog(catalog);
-      persist(next);
+      setSeededForAuthGen(auth.generation);
+      // Seed only — never PUT server preferences without a user action.
+      persistLocal(next, auth.user !== null);
     } else {
       setSelection(null);
       setSelectionForCatalog(null);
@@ -282,7 +328,7 @@ export function SettingsPanel({
               !status.models.includes(current.model)
             ) {
               const next = { ...current, model: status.models[0] ?? "" };
-              persist(next);
+              persistLocal(next, getAuthSession().user !== null);
               return next;
             }
             return current;
@@ -320,7 +366,40 @@ export function SettingsPanel({
         return current;
       }
       const next = { ...current, ...patch };
-      persist(next);
+      const signedIn = getAuthSession().user !== null;
+      persistLocal(next, signedIn);
+
+      const providerModelChanged =
+        (patch.provider !== undefined && patch.provider !== current.provider) ||
+        (patch.model !== undefined && patch.model !== current.model);
+
+      if (signedIn && providerModelChanged) {
+        const session = getAuthSession();
+        if (session.csrfToken) {
+          const seq = ++putSeqRef.current;
+          const generation = session.generation;
+          setPrefsError(null);
+          void putPreferencesRequest(
+            session.csrfToken,
+            next.provider,
+            next.model,
+          )
+            .then((prefs) => {
+              if (putSeqRef.current !== seq) {
+                return;
+              }
+              setAuthPreferences(prefs, { generation, status: "ready" });
+            })
+            .catch(() => {
+              if (putSeqRef.current !== seq) {
+                return;
+              }
+              setPrefsError(
+                "Could not save provider/model preferences. Try again.",
+              );
+            });
+        }
+      }
       return next;
     });
   }
@@ -329,7 +408,7 @@ export function SettingsPanel({
     setProbeNonce((nonce) => nonce + 1);
   }
 
-  if (catalogView.kind === "loading") {
+  if (catalogView.kind === "loading" || !prefsReady) {
     return (
       <div className="kern-settings" aria-busy="true">
         <h1>Settings</h1>
@@ -380,6 +459,11 @@ export function SettingsPanel({
         Configure the provider and model used for grounded chat. Selections stay
         in this browser until Chat uses them.
       </p>
+      {prefsError ? (
+        <p className="kern-settings-callout kern-settings-callout--error" role="alert">
+          {prefsError}
+        </p>
+      ) : null}
 
       <fieldset className="kern-settings-fieldset">
         <legend>Provider</legend>

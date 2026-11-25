@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
+import { ApiError } from "@/lib/api/errors";
 import { useAuth } from "@/lib/auth/use-auth";
 
 export function LoginForm() {
@@ -20,8 +21,14 @@ export function LoginForm() {
     try {
       await signIn(username, password);
       router.push("/settings");
-    } catch {
-      setError("Invalid username or password");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        setError("Invalid username or password");
+      } else if (err instanceof ApiError && err.status === 403) {
+        setError("Sign-in is not allowed from this origin.");
+      } else {
+        setError("Sign-in failed. Please try again.");
+      }
     } finally {
       setPending(false);
       setPassword("");

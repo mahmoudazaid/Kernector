@@ -949,9 +949,12 @@ export function ChatPanel({
   function runtimeFromSettings(
     style: ConversationResponseStyle,
   ): AskChatOptions["body"]["runtime"] {
-    const authPrefs = getAuthSession().preferences;
+    const auth = getAuthSession();
+    const authPrefs = auth.preferences;
     const stored = loadRuntimeSettings();
+    const localSettings = stored?.settings ?? {};
     const fromAuth =
+      auth.user !== null &&
       authPrefs !== null &&
       authPrefs.usable &&
       authPrefs.provider !== null &&
@@ -960,22 +963,21 @@ export function ChatPanel({
         ? {
             provider: authPrefs.provider as "openrouter" | "ollama",
             model: authPrefs.model,
-            settings: stored?.settings ?? {},
+            settings: localSettings,
           }
         : null;
-    const provider: "openrouter" | "ollama" | null =
+    // localStorage provider/model is for signed-out users only (ADR 0013 §8).
+    // Signed-in with missing/stale prefs falls through to catalog defaults.
+    const fromLocal =
+      auth.user === null &&
       stored !== null &&
       (stored.provider === "ollama" || stored.provider === "openrouter")
-        ? stored.provider
-        : null;
-    const fromLocal =
-      stored === null
-        ? null
-        : {
-            provider,
+        ? {
+            provider: stored.provider as "openrouter" | "ollama",
             model: stored.model,
             settings: stored.settings,
-          };
+          }
+        : null;
     const base = fromAuth ?? fromLocal;
     if (style === "default") {
       return base;

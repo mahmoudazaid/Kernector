@@ -2240,11 +2240,13 @@
       "LoginRequest": {
         "properties": {
           "password": {
+            "maxLength": 1024,
             "minLength": 1,
             "title": "Password",
             "type": "string"
           },
           "username": {
+            "maxLength": 64,
             "minLength": 1,
             "title": "Username",
             "type": "string"
@@ -4860,9 +4862,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Login Api V1 Auth Login Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/MeResponse"
                 }
               }
             },
@@ -4946,12 +4946,7 @@
           }
         ],
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
+          "204": {
             "description": "Successful Response"
           },
           "401": {

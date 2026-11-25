@@ -24,6 +24,7 @@ from presentation.http.errors import (
     problem_from_validation_errors,
     register_problem_schemas,
 )
+from presentation.http.redaction import redact_secrets
 from presentation.http.routes import admin_mcp as admin_mcp_routes
 from presentation.http.routes import auth as auth_routes
 from presentation.http.routes import chat as chat_routes
@@ -237,7 +238,12 @@ def create_app(*, cors_origins: Sequence[str] | None = None) -> FastAPI:
 
     @app.exception_handler(ValueError)
     async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse:
-        _LOG.warning("Mapped ValueError on %s", request.url.path, exc_info=exc)
+        _LOG.warning(
+            "Mapped ValueError on %s: %s",
+            request.url.path,
+            redact_secrets(str(exc)),
+            exc_info=exc,
+        )
         problem = problem_from_exception(exc, instance=str(request.url.path))
         return _problem_response(problem)
 
@@ -245,7 +251,12 @@ def create_app(*, cors_origins: Sequence[str] | None = None) -> FastAPI:
     async def runtime_error_handler(
         request: Request, exc: RuntimeError
     ) -> JSONResponse:
-        _LOG.warning("Mapped RuntimeError on %s", request.url.path, exc_info=exc)
+        _LOG.warning(
+            "Mapped RuntimeError on %s: %s",
+            request.url.path,
+            redact_secrets(str(exc)),
+            exc_info=exc,
+        )
         problem = problem_from_exception(exc, instance=str(request.url.path))
         return _problem_response(problem)
 
@@ -253,7 +264,11 @@ def create_app(*, cors_origins: Sequence[str] | None = None) -> FastAPI:
     async def unhandled_exception_handler(
         request: Request, exc: Exception
     ) -> JSONResponse:
-        _LOG.exception("Unhandled exception on %s", request.url.path)
+        _LOG.exception(
+            "Unhandled exception on %s: %s",
+            request.url.path,
+            redact_secrets(str(exc)),
+        )
         problem = problem_from_exception(exc, instance=str(request.url.path))
         return _problem_response(problem)
 

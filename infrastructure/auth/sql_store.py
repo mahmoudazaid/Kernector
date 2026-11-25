@@ -5,9 +5,16 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Literal
 
+from domain.auth.models import (
+    LoginAttemptState,
+    StoredPreferences,
+    StoredSession,
+    StoredUser,
+)
 from domain.auth.passwords import hash_password, verify_password
 from domain.auth.principal import Principal, new_user_id
 from domain.auth.sessions import (
@@ -19,17 +26,16 @@ from infrastructure.auth.errors import (
     DuplicateUsernameError,
     UserNotFoundError,
 )
-from infrastructure.auth.models import (
-    LoginAttemptState,
-    StoredPreferences,
-    StoredSession,
-    StoredUser,
-)
 from infrastructure.catalog import _connection
 from infrastructure.catalog.errors import CatalogError
 from infrastructure.catalog.sql_schema import apply_migrations
 
 _MIGRATIONS = Path(__file__).resolve().parent / "migrations"
+_USERNAME_MAX_LEN = 64
+_ATTEMPT_RETENTION = timedelta(days=7)
+
+# Fixed dummy hash so missing-user auth takes the same scrypt path as a hit.
+_DUMMY_PASSWORD_HASH = hash_password("kernector-timing-dummy")
 
 
 def _now() -> str:
@@ -60,6 +66,10 @@ class SqlAuthStore:
         username = username.strip()
         if not username:
             raise AuthStoreError("username is required")
+        if len(username) > _USERNAME_MAX_LEN:
+            raise AuthStoreError(
+                f"username must be at most {_USERNAME_MAX_LEN} characters"
+            )
         if not password:
             raise AuthStoreError("password is required")
         user_id = new_user_id()
@@ -127,6 +137,7 @@ class SqlAuthStore:
         """Return a principal when credentials match, else ``None``."""
         user = self.get_user_by_username(username)
         if user is None:
+            verify_password(password, _DUMMY_PASSWORD_HASH)
             return None
         if not verify_password(password, user.password_hash):
             return None
@@ -293,27 +304,49 @@ class SqlAuthStore:
             updated_at=row["updated_at"],
         )
 
-    def record_login_failure(
+    def claim_login_attempt(
         self,
         username: str,
         *,
         max_failures: int,
         lockout_seconds: int,
         now: datetime | None = None,
-    ) -> LoginAttemptState:
-        """Increment failure count and set lockout when threshold is reached."""
+    ) -> LoginAttemptState | Literal["locked"]:
+        """Atomically check lockout and increment failure_count before verify."""
         username = username.strip()
+        if not username or len(username) > _USERNAME_MAX_LEN:
+            # Reject oversized names without writing unbounded rows.
+            return "locked"
         clock = now or datetime.now(UTC)
         updated_at = clock.isoformat()
-        existing = self.get_login_attempts(username)
-        failure_count = 1 if existing is None else existing.failure_count + 1
-        locked_until: str | None = None
-        if failure_count >= max_failures:
-            locked_until = datetime.fromtimestamp(
-                clock.timestamp() + lockout_seconds, tz=UTC
-            ).isoformat()
+        retention_cutoff = (clock - _ATTEMPT_RETENTION).isoformat()
         with self._connect(write=True) as connection:
             try:
+                connection.execute(
+                    "DELETE FROM auth_login_attempts WHERE updated_at < ?",
+                    (retention_cutoff,),
+                )
+                row = connection.execute(
+                    "SELECT username, failure_count, locked_until, updated_at "
+                    "FROM auth_login_attempts WHERE username = ?",
+                    (username,),
+                ).fetchone()
+                failure_count = 1
+                if row is not None:
+                    locked_until_raw = row["locked_until"]
+                    if locked_until_raw is not None:
+                        locked_until_dt = _parse_instant(locked_until_raw)
+                        if clock < locked_until_dt:
+                            return "locked"
+                        # Lockout expired — start a fresh window.
+                        failure_count = 1
+                    else:
+                        failure_count = int(row["failure_count"]) + 1
+                locked_until: str | None = None
+                if failure_count >= max_failures:
+                    locked_until = datetime.fromtimestamp(
+                        clock.timestamp() + lockout_seconds, tz=UTC
+                    ).isoformat()
                 connection.execute(
                     "INSERT INTO auth_login_attempts ("
                     "username, failure_count, locked_until, updated_at"
@@ -334,6 +367,36 @@ class SqlAuthStore:
             locked_until=locked_until,
             updated_at=updated_at,
         )
+
+    def record_login_failure(
+        self,
+        username: str,
+        *,
+        max_failures: int,
+        lockout_seconds: int,
+        now: datetime | None = None,
+    ) -> LoginAttemptState:
+        """Increment failure count (compat wrapper around claim_login_attempt)."""
+        result = self.claim_login_attempt(
+            username,
+            max_failures=max_failures,
+            lockout_seconds=lockout_seconds,
+            now=now,
+        )
+        if result == "locked":
+            state = self.get_login_attempts(username)
+            if state is not None:
+                return state
+            clock = now or datetime.now(UTC)
+            return LoginAttemptState(
+                username=username.strip(),
+                failure_count=max_failures,
+                locked_until=datetime.fromtimestamp(
+                    clock.timestamp() + lockout_seconds, tz=UTC
+                ).isoformat(),
+                updated_at=clock.isoformat(),
+            )
+        return result
 
     def clear_login_attempts(self, username: str) -> None:
         """Clear failure/lockout state after a successful login."""
@@ -360,13 +423,32 @@ class SqlAuthStore:
 
     @contextmanager
     def _connect(self, *, write: bool = False) -> Iterator[sqlite3.Connection]:
-        connection = _connection.connect(self._path)
+        try:
+            connection = _connection.connect(self._path)
+        except sqlite3.Error as error:
+            raise AuthStoreError(
+                f"could not open auth store at {self._path}"
+            ) from error
         try:
             if write:
-                connection.execute("BEGIN IMMEDIATE")
+                try:
+                    connection.execute("BEGIN IMMEDIATE")
+                except sqlite3.Error as error:
+                    raise AuthStoreError(
+                        f"could not begin auth transaction at {self._path}"
+                    ) from error
             yield connection
             if write:
-                connection.commit()
+                try:
+                    connection.commit()
+                except sqlite3.Error as error:
+                    raise AuthStoreError(
+                        f"could not commit auth transaction at {self._path}"
+                    ) from error
+        except AuthStoreError:
+            if write:
+                connection.rollback()
+            raise
         except Exception:
             if write:
                 connection.rollback()

@@ -21,5 +21,16 @@ def derive_csrf_token(server_key: bytes, session_id: str) -> str:
 
 
 def csrf_tokens_match(presented: str, expected: str) -> bool:
-    """Constant-time compare of presented and expected CSRF tokens."""
-    return hmac.compare_digest(presented, expected)
+    """Constant-time compare of presented and expected CSRF tokens.
+
+    Compares UTF-8 bytes so non-ASCII header values yield a mismatch (403)
+    instead of raising ``TypeError`` (500).
+    """
+    try:
+        presented_bytes = presented.encode("utf-8")
+        expected_bytes = expected.encode("utf-8")
+    except (AttributeError, UnicodeEncodeError):
+        return False
+    if len(presented_bytes) != len(expected_bytes):
+        return False
+    return hmac.compare_digest(presented_bytes, expected_bytes)

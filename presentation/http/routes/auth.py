@@ -7,9 +7,11 @@ from typing import Annotated
 from fastapi import APIRouter, Header, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
+from application.auth.login import LoginFailedError
 from composition import Settings
 from composition.auth import (
     build_auth_store,
+    build_login,
     derive_session_csrf,
     require_csrf,
     resolve_session,
@@ -28,10 +30,12 @@ from presentation.http.errors import problem_responses
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
+_USERNAME_MAX_LEN = 64
+
 
 class LoginRequest(BaseModel):
-    username: str = Field(min_length=1)
-    password: str = Field(min_length=1)
+    username: str = Field(min_length=1, max_length=_USERNAME_MAX_LEN)
+    password: str = Field(min_length=1, max_length=1024)
 
 
 class MeResponse(BaseModel):
@@ -46,6 +50,7 @@ def _settings() -> Settings:
 
 @router.post(
     "/login",
+    response_model=MeResponse,
     responses=problem_responses(401, 403, 415, 422, 500),
 )
 def login(
@@ -53,7 +58,7 @@ def login(
     request: Request,
     response: Response,
     content_type: Annotated[str | None, Header(alias="Content-Type")] = None,
-) -> dict:
+) -> MeResponse:
     """Authenticate and issue a fresh session cookie plus CSRF token."""
     settings = _settings()
     auth = settings.auth
@@ -63,46 +68,38 @@ def login(
     if not origin_is_trusted(origin, auth.trusted_origins):
         raise HTTPException(status_code=403, detail="Origin not allowed")
 
-    store = build_auth_store(settings)
-    if store.is_locked(body.username):
-        raise HTTPException(status_code=401, detail=GENERIC_LOGIN_FAILURE)
-
-    principal = store.authenticate(body.username, body.password)
-    if principal is None:
-        store.record_login_failure(
+    login_uc = build_login(settings)
+    try:
+        result = login_uc.execute(
             body.username,
-            max_failures=auth.login_max_failures,
-            lockout_seconds=auth.login_lockout_seconds,
+            body.password,
+            prior_session_id=request.cookies.get(auth.cookie_name),
         )
-        raise HTTPException(status_code=401, detail=GENERIC_LOGIN_FAILURE)
+    except LoginFailedError as error:
+        raise HTTPException(
+            status_code=401, detail=GENERIC_LOGIN_FAILURE
+        ) from error
 
-    store.clear_login_attempts(body.username)
-    prior = request.cookies.get(auth.cookie_name)
-    if prior:
-        store.revoke_session(prior)
-
-    session_id, _ = store.create_session(
-        principal.user_id, ttl_seconds=auth.session_ttl_seconds
-    )
-    csrf = derive_session_csrf(auth, session_id)
+    csrf = derive_session_csrf(auth, result.session_id)
     secure = request_wants_secure_cookie(request)
     set_session_cookie(
         response,
         cookie_name=auth.cookie_name,
-        session_id=session_id,
+        session_id=result.session_id,
         max_age=auth.session_ttl_seconds,
         secure=secure,
     )
     with_no_store(response)
-    return {
-        "user_id": principal.user_id,
-        "username": principal.username,
-        "csrf_token": csrf,
-    }
+    return MeResponse(
+        user_id=result.principal.user_id,
+        username=result.principal.username,
+        csrf_token=csrf,
+    )
 
 
 @router.get(
     "/me",
+    response_model=MeResponse,
     responses=problem_responses(401, 500),
 )
 def me(request: Request, response: Response) -> MeResponse:
@@ -125,6 +122,8 @@ def me(request: Request, response: Response) -> MeResponse:
 
 @router.post(
     "/logout",
+    status_code=204,
+    response_class=Response,
     responses=problem_responses(401, 403, 500),
 )
 def logout(

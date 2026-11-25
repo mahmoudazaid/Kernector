@@ -30,6 +30,12 @@ def test_csrf_tokens_match_rejects_mismatch() -> None:
     assert csrf_tokens_match(token, derive_csrf_token(key, "session-b")) is False
 
 
+def test_csrf_tokens_match_rejects_non_ascii_without_raising() -> None:
+    key = b"server-only-csrf-key-32-bytes-ok!!"
+    token = derive_csrf_token(key, "session-a")
+    assert csrf_tokens_match("\xe9", token) is False
+
+
 def test_derive_csrf_token_does_not_mutate_session_id() -> None:
     key = b"server-only-csrf-key-32-bytes-ok!!"
     session_id = "immutable-session"

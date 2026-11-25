@@ -37,9 +37,31 @@ export function adjustSetCookieForBrowser(
 
 export function redactAuthSecrets(text: string): string {
   return text
-    .replace(/(password|passwd|pwd)\s*[:=]\s*([^\s,;]+)/gi, "$1=[REDACTED]")
+    .replace(
+      /(["']?(?:password|passwd|pwd)["']?\s*[:=]\s*)(?:"([^"\\]*(?:\\.[^"\\]*)*)"|'([^'\\]*(?:\\.[^'\\]*)*)'|([^\s,;]+))/gi,
+      (_match, prefix: string, dq?: string, sq?: string) => {
+        if (dq !== undefined) {
+          return `${prefix}"[REDACTED]"`;
+        }
+        if (sq !== undefined) {
+          return `${prefix}'[REDACTED]'`;
+        }
+        return `${prefix}[REDACTED]`;
+      },
+    )
     .replace(/(kernector_session)=([^;\s]+)/gi, "$1=[REDACTED]")
-    .replace(/(x-csrf-token|csrf_token)\s*[:=]\s*([^\s,;]+)/gi, "$1=[REDACTED]");
+    .replace(
+      /(["']?(?:x-csrf-token|csrf_token)["']?\s*[:=]\s*)(?:"([^"\\]*(?:\\.[^"\\]*)*)"|'([^'\\]*(?:\\.[^'\\]*)*)'|([^\s,;]+))/gi,
+      (_match, prefix: string, dq?: string, sq?: string) => {
+        if (dq !== undefined) {
+          return `${prefix}"[REDACTED]"`;
+        }
+        if (sq !== undefined) {
+          return `${prefix}'[REDACTED]'`;
+        }
+        return `${prefix}[REDACTED]`;
+      },
+    );
 }
 
 export async function proxyAuthApi(
@@ -101,9 +123,12 @@ export async function proxyAuthApi(
     }
   }
 
-  const body = await upstream.arrayBuffer();
+  const status = upstream.status;
+  // 204/205/304 must not carry a body — even an empty ArrayBuffer throws.
+  const nullBody = status === 204 || status === 205 || status === 304;
+  const body = nullBody ? null : await upstream.arrayBuffer();
   return new Response(body, {
-    status: upstream.status,
+    status,
     headers: outHeaders,
   });
 }

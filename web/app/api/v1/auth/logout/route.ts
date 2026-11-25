@@ -7,9 +7,8 @@ export async function POST(request: Request): Promise<Response> {
       method: "POST",
     });
   } catch (error) {
-    void redactAuthSecrets(
-      error instanceof Error ? error.message : "backend unavailable",
-    );
+    const raw = error instanceof Error ? error.message : "backend unavailable";
+    console.error("[auth/logout]", redactAuthSecrets(raw));
     return NextResponse.json(
       {
         type: "https://kernector.dev/problems/backend_unavailable",

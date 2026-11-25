@@ -3,9 +3,11 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const usePathname = vi.fn(() => "/");
+const useRouter = vi.fn(() => ({ push: vi.fn(), replace: vi.fn() }));
 
 vi.mock("next/navigation", () => ({
   usePathname: () => usePathname(),
+  useRouter: () => useRouter(),
 }));
 
 vi.mock("next/link", () => ({

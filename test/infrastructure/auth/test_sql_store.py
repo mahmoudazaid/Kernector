@@ -87,8 +87,32 @@ def test_login_attempt_counter_and_lockout(tmp_path: Path) -> None:
     assert locked.locked_until is not None
     assert store.is_locked("alice", now=now) is True
     assert store.is_locked("alice", now=now + timedelta(seconds=601)) is False
+    # After lockout expires, the next failure starts a fresh window at 1.
+    after = store.record_login_failure(
+        "alice",
+        max_failures=3,
+        lockout_seconds=600,
+        now=now + timedelta(seconds=601),
+    )
+    assert after.failure_count == 1
+    assert after.locked_until is None
     store.clear_login_attempts("alice")
     assert store.get_login_attempts("alice") is None
+
+
+def test_claim_login_attempt_returns_locked_while_locked(tmp_path: Path) -> None:
+    store = SqlAuthStore(tmp_path / "auth.sqlite")
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    for _ in range(3):
+        store.claim_login_attempt(
+            "alice", max_failures=3, lockout_seconds=600, now=now
+        )
+    assert (
+        store.claim_login_attempt(
+            "alice", max_failures=3, lockout_seconds=600, now=now
+        )
+        == "locked"
+    )
 
 
 def test_user_id_stable_across_sessions(tmp_path: Path) -> None:

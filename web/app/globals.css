@@ -259,6 +259,29 @@ a {
   box-shadow: var(--kern-control-emboss-press);
 }
 
+.kern-nav-auth {
+  display: grid;
+  gap: var(--kern-space-1);
+  margin-top: var(--kern-space-2);
+}
+
+.kern-nav-user {
+  cursor: default;
+  font-size: 0.875rem;
+}
+
+.kern-nav-user:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.kern-nav-error {
+  margin: 0;
+  padding: 0 var(--kern-space-3);
+  color: var(--kern-danger, #b42318);
+  font-size: 0.8125rem;
+}
+
 .kern-main {
   display: flex;
   flex-direction: column;

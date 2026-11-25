@@ -3511,9 +3511,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            [key: string]: unknown;
-          };
+          "application/json": components["schemas"]["MeResponse"];
         };
       };
       /** @description Unauthorized */
@@ -3575,13 +3573,11 @@ export interface operations {
     requestBody?: never;
     responses: {
       /** @description Successful Response */
-      200: {
+      204: {
         headers: {
           [name: string]: unknown;
         };
-        content: {
-          "application/json": unknown;
-        };
+        content?: never;
       };
       /** @description Unauthorized */
       401: {
