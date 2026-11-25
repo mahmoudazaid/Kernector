@@ -130,7 +130,7 @@ def remove_association(
 
 
 @router.get(
-    "/projects/{project_id}/artifacts/{key}/relationships",
+    "/projects/{project_id}/artifacts/{key:path}/relationships",
     responses=problem_responses(404, 422, 500),
 )
 def list_artifact_relationships(

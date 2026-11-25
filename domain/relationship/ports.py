@@ -64,6 +64,8 @@ class RelationshipStore(Protocol):
         project_id: str,
         ref: ArtifactRef | UnresolvedKey,
         filters: Mapping[str, str] | None = None,
+        *,
+        aliases: tuple[str, ...] = (),
     ) -> tuple[Relationship, ...]:
         """Return relationships for ``ref`` in ``project_id`` only."""
 

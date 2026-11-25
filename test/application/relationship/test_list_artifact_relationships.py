@@ -74,6 +74,7 @@ def test_lists_inverse_relation_from_object_side(
         index,
         project_exists=lambda project_id: project_id == "prj_orders",
         project_ids_for=lambda _ref: ("prj_orders",),
+        inverse_names={"tests": "tested_by"},
     )
 
     views = use_case.execute("prj_orders", "PROJ-123")
@@ -83,6 +84,43 @@ def test_lists_inverse_relation_from_object_side(
     assert views[0].direction == "inward"
     assert views[0].origin == ORIGIN_PROVIDER_DECLARED
     assert views[0].subject.contexts == ("business",)
+
+
+def test_drops_edges_when_evidence_source_no_longer_associated(
+    index: SqlArtifactIndex, store: SqlRelationshipStore
+) -> None:
+    index.upsert(_descriptor("inst/OPS:OPS-9", "OPS-9"))
+    index.upsert(_descriptor("inst/PROJ:PROJ-123", "PROJ-123"))
+    store.upsert_from_evidence(
+        project_id="prj_orders",
+        subject=ArtifactRef(SourceReference("inst/OPS:OPS-9", "jira")),
+        relation_type="blocks",
+        object=ArtifactRef(SourceReference("inst/PROJ:PROJ-123", "jira")),
+        origin=ORIGIN_PROVIDER_DECLARED,
+        verification=VERIFICATION_VERIFIED,
+        confidence=1.0,
+        freshness="current",
+        evidence=EvidenceRef(
+            source=SourceReference("inst/OPS:OPS-9", "jira"),
+            revision="r1",
+            locator="field=issuelinks;type=Blocks;dir=out;key=PROJ-123",
+            extractor_id="jira_explicit_links",
+        ),
+        seen_at="2026-10-01T12:00:00Z",
+    )
+    associations = {
+        "inst/OPS:OPS-9": (),
+        "inst/PROJ:PROJ-123": ("prj_orders",),
+    }
+    use_case = ListArtifactRelationships(
+        store,
+        index,
+        project_exists=lambda project_id: project_id == "prj_orders",
+        project_ids_for=lambda ref: associations.get(ref.source_id, ()),
+        inverse_names={"blocks": "blocked_by"},
+    )
+
+    assert use_case.execute("prj_orders", "PROJ-123") == ()
 
 
 def test_rejects_unknown_project_and_invisible_key(

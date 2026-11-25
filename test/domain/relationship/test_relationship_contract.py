@@ -176,6 +176,11 @@ def test_human_confirmed_starts_verified() -> None:
     assert edge.origin == ORIGIN_HUMAN_CONFIRMED
 
 
+def test_provider_declared_cannot_be_unverified() -> None:
+    with pytest.raises(RelationshipInputError, match="verified"):
+        _relationship(verification=VERIFICATION_UNVERIFIED)
+
+
 def test_evidence_ref_rejects_blank_locator() -> None:
     with pytest.raises(RelationshipInputError):
         _evidence(locator="   ")

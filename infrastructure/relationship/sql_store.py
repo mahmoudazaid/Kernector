@@ -91,6 +91,16 @@ def _prefer_resolved(
     return incoming
 
 
+def _pick_merge_survivor(matches: Sequence[sqlite3.Row]) -> sqlite3.Row:
+    """Prefer rejected edges, then earliest first_seen_at, then stable id."""
+
+    def rank(row: sqlite3.Row) -> tuple[int, str, str]:
+        verification_rank = 0 if row["verification"] == VERIFICATION_REJECTED else 1
+        return (verification_rank, row["first_seen_at"], row["relationship_id"])
+
+    return min(matches, key=rank)
+
+
 class SqlRelationshipStore:
     """Workspace-scoped evidence-backed relationship store."""
 
@@ -164,7 +174,8 @@ class SqlRelationshipStore:
                     ),
                 )
             else:
-                relationship_id = matches[0]["relationship_id"]
+                survivor = _pick_merge_survivor(matches)
+                relationship_id = survivor["relationship_id"]
                 merged_subject = subject
                 merged_object = object
                 for row in matches:
@@ -175,7 +186,9 @@ class SqlRelationshipStore:
                         _endpoint_from_row(row, "object"), merged_object
                     )
                 keep_id = relationship_id
-                for row in matches[1:]:
+                for row in matches:
+                    if row["relationship_id"] == keep_id:
+                        continue
                     self._merge_into(
                         connection, keep_id=keep_id, drop_id=row["relationship_id"]
                     )
@@ -232,7 +245,6 @@ class SqlRelationshipStore:
     def mark_stale_for_evidence(
         self, source_ref: SourceReference, revision: str
     ) -> None:
-        del revision
         connection = _connection.connect(self._path)
         try:
             connection.execute("BEGIN IMMEDIATE")
@@ -246,6 +258,7 @@ class SqlRelationshipStore:
                     WHERE workspace_id = ?
                       AND source_type = ?
                       AND source_id = ?
+                      AND revision != ?
                   )
                 """,
                 (
@@ -253,6 +266,7 @@ class SqlRelationshipStore:
                     self._workspace_id,
                     source_ref.source_type,
                     source_ref.source_id,
+                    revision,
                 ),
             )
             connection.execute("COMMIT")
@@ -319,38 +333,53 @@ class SqlRelationshipStore:
         actor: str,
         at: datetime,
     ) -> Relationship:
-        current = self.get(relationship_id)
-        if current is None:
-            raise RelationshipInputError(
-                f"relationship not found: {relationship_id}"
-            )
-        if verification == VERIFICATION_VERIFIED:
-            updated = current.confirm(actor=actor, at=at)
-        elif verification == VERIFICATION_REJECTED:
-            updated = current.reject(actor=actor, at=at)
-        else:
-            raise RelationshipInputError(
-                "apply_decision verification must be verified or rejected"
-            )
         connection = _connection.connect(self._path)
         try:
             connection.execute("BEGIN IMMEDIATE")
-            connection.execute(
+            row = connection.execute(
+                """
+                SELECT * FROM relationships
+                WHERE workspace_id = ? AND relationship_id = ?
+                """,
+                (self._workspace_id, relationship_id),
+            ).fetchone()
+            if row is None:
+                raise RelationshipInputError(
+                    f"relationship not found: {relationship_id}"
+                )
+            current = self._relationship_from_row(connection, row)
+            expected_version = int(row["decision_version"])
+            if verification == VERIFICATION_VERIFIED:
+                updated = current.confirm(actor=actor, at=at)
+            elif verification == VERIFICATION_REJECTED:
+                updated = current.reject(actor=actor, at=at)
+            else:
+                raise RelationshipInputError(
+                    "apply_decision verification must be verified or rejected"
+                )
+            cursor = connection.execute(
                 """
                 UPDATE relationships
                 SET verification = ?, decision_actor = ?, decision_at = ?,
-                    last_verified_at = ?
+                    last_verified_at = ?, decision_version = ?
                 WHERE workspace_id = ? AND relationship_id = ?
+                  AND decision_version = ?
                 """,
                 (
                     updated.verification,
                     updated.decision_actor,
                     updated.decision_at,
                     updated.last_verified_at,
+                    expected_version + 1,
                     self._workspace_id,
                     relationship_id,
+                    expected_version,
                 ),
             )
+            if cursor.rowcount != 1:
+                raise RelationshipInputError(
+                    "relationship decision conflict: concurrent update"
+                )
             connection.execute("COMMIT")
         except Exception:
             connection.execute("ROLLBACK")
@@ -505,13 +534,14 @@ class SqlRelationshipStore:
                 object_kind, object_source_type, object_source_id,
                 object_part_key, object_unresolved_key,
                 origin, verification, confidence, freshness,
-                first_seen_at, last_verified_at, decision_actor, decision_at
+                first_seen_at, last_verified_at, decision_actor, decision_at,
+                decision_version
             ) VALUES (
                 ?, ?, ?, ?, ?, ?,
                 ?, ?, ?, ?, ?,
                 ?, ?, ?, ?, ?,
                 ?, ?, ?, ?,
-                ?, ?, NULL, NULL
+                ?, ?, NULL, NULL, 1
             )
             """,
             (
@@ -624,6 +654,76 @@ class SqlRelationshipStore:
         keep_id: str,
         drop_id: str,
     ) -> None:
+        keep = connection.execute(
+            """
+            SELECT verification, decision_actor, decision_at, first_seen_at,
+                   decision_version
+            FROM relationships
+            WHERE workspace_id = ? AND relationship_id = ?
+            """,
+            (self._workspace_id, keep_id),
+        ).fetchone()
+        drop = connection.execute(
+            """
+            SELECT verification, decision_actor, decision_at, first_seen_at,
+                   decision_version
+            FROM relationships
+            WHERE workspace_id = ? AND relationship_id = ?
+            """,
+            (self._workspace_id, drop_id),
+        ).fetchone()
+        if keep is not None and drop is not None:
+            # Preserve human rejection and the earliest first_seen_at.
+            if (
+                drop["verification"] == VERIFICATION_REJECTED
+                and keep["verification"] != VERIFICATION_REJECTED
+            ):
+                connection.execute(
+                    """
+                    UPDATE relationships
+                    SET verification = ?, decision_actor = ?, decision_at = ?,
+                        decision_version = ?
+                    WHERE workspace_id = ? AND relationship_id = ?
+                    """,
+                    (
+                        drop["verification"],
+                        drop["decision_actor"],
+                        drop["decision_at"],
+                        max(
+                            int(keep["decision_version"]),
+                            int(drop["decision_version"]),
+                        )
+                        + 1,
+                        self._workspace_id,
+                        keep_id,
+                    ),
+                )
+            elif (
+                keep["decision_actor"] is None
+                and drop["decision_actor"] is not None
+            ):
+                connection.execute(
+                    """
+                    UPDATE relationships
+                    SET decision_actor = ?, decision_at = ?
+                    WHERE workspace_id = ? AND relationship_id = ?
+                    """,
+                    (
+                        drop["decision_actor"],
+                        drop["decision_at"],
+                        self._workspace_id,
+                        keep_id,
+                    ),
+                )
+            if drop["first_seen_at"] < keep["first_seen_at"]:
+                connection.execute(
+                    """
+                    UPDATE relationships
+                    SET first_seen_at = ?
+                    WHERE workspace_id = ? AND relationship_id = ?
+                    """,
+                    (drop["first_seen_at"], self._workspace_id, keep_id),
+                )
         connection.execute(
             """
             INSERT OR IGNORE INTO relationship_evidence (

@@ -198,6 +198,120 @@ def test_locator_stable_across_identical_reextracts() -> None:
     assert first[0].relation_type == "relates_to"
 
 
+def test_xray_test_type_maps_via_name_and_phrases() -> None:
+    extractor = JiraExplicitLinkExtractor()
+    by_name = _document(
+        "PROJ-140",
+        links_payload={
+            "v": 1,
+            "issue_key": "PROJ-140",
+            "links": [
+                {
+                    "field": "issuelinks",
+                    "type_name": "Test",
+                    "direction": "outward",
+                    "other_key": "PROJ-123",
+                    "type_inward": "is tested by",
+                    "type_outward": "tests",
+                }
+            ],
+        },
+    )
+    by_phrase = _document(
+        "PROJ-140",
+        links_payload={
+            "v": 1,
+            "issue_key": "PROJ-140",
+            "links": [
+                {
+                    "field": "issuelinks",
+                    "type_name": "Problem/Incident",
+                    "direction": "outward",
+                    "other_key": "PROJ-123",
+                    "type_outward": "causes",
+                }
+            ],
+        },
+    )
+
+    named = extractor.extract(
+        by_name, decode_provider_links_raw(by_name.metadata.extra)
+    )
+    phrased = extractor.extract(
+        by_phrase, decode_provider_links_raw(by_phrase.metadata.extra)
+    )
+
+    assert named[0].relation_type == "tests"
+    assert named[0].subject_key == "PROJ-140"
+    assert named[0].object_key == "PROJ-123"
+    assert phrased[0].relation_type == "affects"
+
+
+def test_non_ascii_link_types_stay_distinct() -> None:
+    extractor = JiraExplicitLinkExtractor()
+    first = _document(
+        links_payload={
+            "v": 1,
+            "issue_key": "PROJ-140",
+            "links": [
+                {
+                    "field": "issuelinks",
+                    "type_name": "関連",
+                    "direction": "outward",
+                    "other_key": "PROJ-50",
+                }
+            ],
+        },
+    )
+    second = _document(
+        links_payload={
+            "v": 1,
+            "issue_key": "PROJ-140",
+            "links": [
+                {
+                    "field": "issuelinks",
+                    "type_name": "依存",
+                    "direction": "outward",
+                    "other_key": "PROJ-50",
+                }
+            ],
+        },
+    )
+
+    a = extractor.extract(first, decode_provider_links_raw(first.metadata.extra))
+    b = extractor.extract(second, decode_provider_links_raw(second.metadata.extra))
+
+    assert a[0].relation_type == "jira:関連"
+    assert b[0].relation_type == "jira:依存"
+    assert a[0].relation_type != b[0].relation_type
+
+
+def test_build_payload_keeps_inward_outward_phrases() -> None:
+    from infrastructure.connectors.jira.link_extractor import (
+        build_provider_links_payload,
+    )
+
+    payload = build_provider_links_payload(
+        issue_key="PROJ-140",
+        fields={
+            "issuelinks": [
+                {
+                    "type": {
+                        "name": "Test",
+                        "inward": "is tested by",
+                        "outward": "tests",
+                    },
+                    "outwardIssue": {"key": "PROJ-123"},
+                }
+            ]
+        },
+    )
+
+    assert payload["links"][0]["type_name"] == "Test"
+    assert payload["links"][0]["type_inward"] == "is tested by"
+    assert payload["links"][0]["type_outward"] == "tests"
+
+
 def test_encode_round_trip_versioned_payload() -> None:
     payload = {"v": 1, "issue_key": "PROJ-1", "links": []}
     encoded = encode_provider_links(payload)

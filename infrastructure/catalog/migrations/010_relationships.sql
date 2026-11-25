@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS relationships (
     last_verified_at TEXT,
     decision_actor TEXT,
     decision_at TEXT,
+    decision_version INTEGER NOT NULL DEFAULT 1,
     PRIMARY KEY (workspace_id, relationship_id),
     UNIQUE (workspace_id, project_id, subject_token, relation_type, object_token)
 );

@@ -95,12 +95,7 @@ def test_lists_selected_project_issues_with_stable_identity_and_revision() -> No
         SourceReference(f"{CLOUD_ID}/KAN:KAN-1", SourceType.JIRA),
         SourceReference(f"{CLOUD_ID}/KAN:KAN-2", SourceType.JIRA),
     ]
-    assert all(
-        d.revision.startswith("2026-09-01T10:00:00.000+0000#")
-        or d.revision.startswith("2026-09-02T00:00:00.000+0000#")
-        for d in documents
-    )
-    assert [d.revision.split("#", 1)[0] for d in documents] == [
+    assert [d.revision for d in documents] == [
         "2026-09-01T10:00:00.000+0000",
         "2026-09-02T00:00:00.000+0000",
     ]

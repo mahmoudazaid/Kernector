@@ -17,7 +17,7 @@ from domain.relationship.errors import RelationshipInputError
 
 _IDENTIFIER = re.compile(r"[A-Za-z0-9_-]+")
 _TOKEN = re.compile(r"[a-z][a-z0-9_]*")
-_RELATION_TYPE = re.compile(r"[a-z][a-z0-9_]*(?::[A-Za-z0-9_-]+)?")
+_RELATION_TYPE = re.compile(r"[a-z][a-z0-9_]*(?::[\w-]+)?", re.UNICODE)
 _MAX_IDENTIFIER_LENGTH = 64
 _MAX_TOKEN_LENGTH = 64
 _MAX_TEXT_LENGTH = 512
@@ -258,6 +258,10 @@ class Relationship:
             _require_text(self.decision_actor, "decision_actor")
         if self.decision_at is not None:
             _require_text(self.decision_at, "decision_at")
+        if origin in _START_VERIFIED and verification == VERIFICATION_UNVERIFIED:
+            raise RelationshipInputError(
+                f"{origin} relationships must start verified, not unverified"
+            )
         if origin == ORIGIN_INFERRED and verification != VERIFICATION_UNVERIFIED:
             if self.decision_actor is None or self.decision_at is None:
                 raise RelationshipInputError(

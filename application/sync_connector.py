@@ -289,7 +289,7 @@ class SyncConnectorDocuments:
         retry = getattr(self._artifact_sync, "record_relationships_if_needed", None)
         if not callable(needs) or not callable(retry):
             return
-        if not needs(document.reference):
+        if not needs(document.reference, revision=document.revision):
             return
         fetched = self._fetch(document, previous)
         if isinstance(fetched, ConnectorSyncOutcome):

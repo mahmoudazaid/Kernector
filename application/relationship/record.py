@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 ProjectIdsForSource = Callable[[SourceReference], tuple[str, ...]]
 RawFromDocument = Callable[[SourceDocument], Mapping[str, object] | None]
 DEFAULT_EXTRACTOR_ID = "explicit_links"
+_WATERMARK_VERSION = "v1"
 
 
 def links_fingerprint_for(source: SourceDocument) -> str:
@@ -36,6 +37,28 @@ def links_fingerprint_for(source: SourceDocument) -> str:
         if key.startswith(TRANSPORT_KEY_PREFIX)
     ]
     return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
+
+
+def encode_record_watermark(
+    links_fingerprint: str,
+    revision: str,
+    project_ids: tuple[str, ...],
+) -> str:
+    """Encode fingerprint, revision, and resolved project ids for skip checks."""
+    projects = ",".join(sorted(project_ids))
+    return f"{_WATERMARK_VERSION}\n{links_fingerprint}\n{revision}\n{projects}"
+
+
+def parse_record_watermark(
+    raw: str,
+) -> tuple[str, str, tuple[str, ...]] | None:
+    """Parse a watermark; return None when the payload is legacy or corrupt."""
+    parts = raw.split("\n", 3)
+    if len(parts) != 4 or parts[0] != _WATERMARK_VERSION:
+        return None
+    _, fingerprint, revision, projects = parts
+    project_ids = tuple(item for item in projects.split(",") if item)
+    return fingerprint, revision, project_ids
 
 
 class RecordExplicitRelationships:
@@ -60,10 +83,37 @@ class RecordExplicitRelationships:
         self._extractor_id = extractor_id
         self._now = now or (lambda: datetime.now(UTC).isoformat())
 
-    def needs_record(self, source: SourceDocument) -> bool:
+    def needs_record(self, source: SourceDocument, *, revision: str) -> bool:
         """Return whether relationships for ``source`` are missing or stale."""
-        fingerprint = links_fingerprint_for(source)
-        return self._store.get_record_watermark(source.reference) != fingerprint
+        project_ids = self._project_ids_for(source.reference)
+        if not project_ids:
+            return False
+        expected = encode_record_watermark(
+            links_fingerprint_for(source), revision, project_ids
+        )
+        return self._store.get_record_watermark(source.reference) != expected
+
+    def needs_retry(self, reference: SourceReference, *, revision: str) -> bool:
+        """Return whether a skipped source should re-attempt relationship recording.
+
+        Compares stored revision and project ids without fetching link payloads.
+        Fingerprint drift is checked in ``needs_record`` after a fetch.
+        """
+        if not self.supports(reference):
+            return False
+        project_ids = self._project_ids_for(reference)
+        stored = self._store.get_record_watermark(reference)
+        if stored is None:
+            return bool(project_ids)
+        parsed = parse_record_watermark(stored)
+        if parsed is None:
+            return True
+        _fingerprint, stored_revision, stored_projects = parsed
+        if stored_revision != revision:
+            return True
+        if stored_projects != tuple(sorted(project_ids)):
+            return True
+        return False
 
     def missing_watermark(self, reference: SourceReference) -> bool:
         """Return whether no successful relationship record exists yet."""
@@ -78,12 +128,13 @@ class RecordExplicitRelationships:
         extractor = self._extractors.get(str(source.reference.source_type))
         if extractor is None:
             return
-        fingerprint = links_fingerprint_for(source)
-        if self._store.get_record_watermark(source.reference) == fingerprint:
-            return
         project_ids = self._project_ids_for(source.reference)
         if not project_ids:
-            self._store.set_record_watermark(source.reference, fingerprint)
+            # Associating a project later must still be able to record.
+            return
+        fingerprint = links_fingerprint_for(source)
+        watermark = encode_record_watermark(fingerprint, revision, project_ids)
+        if self._store.get_record_watermark(source.reference) == watermark:
             return
         raw = self._raw_from_document(source)
         links: tuple[ProviderLink, ...] = ()
@@ -94,10 +145,14 @@ class RecordExplicitRelationships:
         for project_id in project_ids:
             for link in links:
                 subject, subject_aliases = self._resolve_endpoint(
-                    link.subject_key, instance_prefix=instance_prefix
+                    link.subject_key,
+                    instance_prefix=instance_prefix,
+                    part_key=link.subject_part_key,
                 )
                 obj, object_aliases = self._resolve_endpoint(
-                    link.object_key, instance_prefix=instance_prefix
+                    link.object_key,
+                    instance_prefix=instance_prefix,
+                    part_key=link.object_part_key,
                 )
                 evidence = EvidenceRef(
                     source=source.reference,
@@ -124,7 +179,7 @@ class RecordExplicitRelationships:
                 source=source,
                 seen_at=seen_at,
             )
-        self._store.set_record_watermark(source.reference, fingerprint)
+        self._store.set_record_watermark(source.reference, watermark)
 
     def _resolve_arriving_artifact(
         self,
@@ -137,6 +192,7 @@ class RecordExplicitRelationships:
         descriptor = self._index.get(source.reference)
         if descriptor is None or not descriptor.external_keys:
             return
+        arriving_prefix = _source_instance_prefix(source.reference.source_id)
         ref = ArtifactRef(source.reference)
         for key in descriptor.external_keys:
             pending = self._store.list_for_artifact(
@@ -145,13 +201,20 @@ class RecordExplicitRelationships:
                 aliases=(key,),
             )
             for edge in pending:
+                evidence = edge.evidence[0]
+                evidence_prefix = _source_instance_prefix(evidence.source.source_id)
+                if (
+                    arriving_prefix
+                    and evidence_prefix
+                    and arriving_prefix != evidence_prefix
+                ):
+                    continue
                 subject = (
                     ref if self._endpoint_matches(edge.subject, key) else edge.subject
                 )
                 obj = ref if self._endpoint_matches(edge.object, key) else edge.object
                 if subject is edge.subject and obj is edge.object:
                     continue
-                evidence = edge.evidence[0]
                 self._store.upsert_from_evidence(
                     project_id=project_id,
                     subject=subject,
@@ -178,19 +241,28 @@ class RecordExplicitRelationships:
         return isinstance(endpoint, UnresolvedKey) and endpoint.key == key
 
     def _resolve_endpoint(
-        self, key: str, *, instance_prefix: str
+        self,
+        key: str,
+        *,
+        instance_prefix: str,
+        part_key: str | None = None,
     ) -> tuple[ArtifactRef | UnresolvedKey, tuple[str, ...]]:
         matches = self._index.find_by_key((key,))
         if not matches:
             return UnresolvedKey(key), (key,)
-        preferred = [
-            item
-            for item in matches
-            if instance_prefix and item.reference.source_id.startswith(instance_prefix)
-        ]
-        chosen = preferred[0] if preferred else matches[0]
+        if instance_prefix:
+            preferred = [
+                item
+                for item in matches
+                if item.reference.source_id.startswith(instance_prefix)
+            ]
+            if not preferred:
+                return UnresolvedKey(key), (key,)
+            chosen = preferred[0]
+        else:
+            chosen = matches[0]
         aliases = tuple(dict.fromkeys((key, *chosen.external_keys)))
-        return ArtifactRef(chosen.reference), aliases
+        return ArtifactRef(chosen.reference, part_key=part_key), aliases
 
 
 def _source_instance_prefix(source_id: str) -> str:

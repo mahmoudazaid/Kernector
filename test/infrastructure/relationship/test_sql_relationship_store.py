@@ -254,3 +254,33 @@ def test_confirm_reject_round_trip_preserves_inferred_origin(
     assert rejected.origin == ORIGIN_INFERRED
     assert rejected.verification == VERIFICATION_REJECTED
     assert rejected.decision_actor == "lead"
+
+
+def test_mark_stale_for_evidence_ignores_matching_revision(
+    store: SqlRelationshipStore,
+) -> None:
+    edge = store.upsert_from_evidence(
+        project_id="prj_orders",
+        subject=_ref("inst/PROJ:PROJ-140"),
+        relation_type="tests",
+        object=_ref("inst/PROJ:PROJ-123"),
+        origin=ORIGIN_PROVIDER_DECLARED,
+        verification=VERIFICATION_VERIFIED,
+        confidence=1.0,
+        freshness="current",
+        evidence=_evidence(revision="r-current"),
+        seen_at="2026-10-01T12:00:00Z",
+    )
+    store.mark_stale_for_evidence(
+        SourceReference("inst/PROJ:PROJ-140", "jira"), "r-current"
+    )
+    loaded = store.get(edge.relationship_id)
+    assert loaded is not None
+    assert loaded.freshness == "current"
+
+    store.mark_stale_for_evidence(
+        SourceReference("inst/PROJ:PROJ-140", "jira"), "r-other"
+    )
+    loaded = store.get(edge.relationship_id)
+    assert loaded is not None
+    assert loaded.freshness == "stale"

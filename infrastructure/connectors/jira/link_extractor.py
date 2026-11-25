@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from collections.abc import Mapping, Sequence
@@ -15,9 +16,10 @@ EXTRACTOR_ID = "jira_explicit_links"
 _PROVIDER_LINKS_VERSION = 1
 
 _DEFAULT_TYPE_MAP: dict[str, tuple[str, str]] = {
-    # type_name.casefold() -> (canonical_relation, role_of_outward_end)
+    # type_name / inward / outward phrase.casefold() -> (canonical, outward_role)
     # role: "subject" means the outward end is the canonical subject.
     "tests": ("tests", "subject"),
+    "test": ("tests", "subject"),  # Xray default link type name
     "is tested by": ("tests", "object"),
     "relates": ("relates_to", "subject"),
     "blocks": ("blocks", "subject"),
@@ -88,10 +90,18 @@ def build_provider_links_payload(
                 continue
             type_map = item.get("type")
             type_name = ""
+            type_inward = ""
+            type_outward = ""
             if isinstance(type_map, Mapping):
                 name = type_map.get("name")
                 if isinstance(name, str):
                     type_name = name.strip()
+                inward = type_map.get("inward")
+                if isinstance(inward, str):
+                    type_inward = inward.strip()
+                outward = type_map.get("outward")
+                if isinstance(outward, str):
+                    type_outward = outward.strip()
             outward = item.get("outwardIssue")
             inward = item.get("inwardIssue")
             outward_key = (
@@ -103,29 +113,38 @@ def build_provider_links_payload(
                 inward.get("key") if isinstance(inward, Mapping) else None
             )
             if isinstance(outward_key, str) and outward_key.strip() and type_name:
-                links.append(
-                    {
-                        "field": "issuelinks",
-                        "type_name": type_name,
-                        "direction": "outward",
-                        "other_key": outward_key.strip(),
-                    }
-                )
+                entry = {
+                    "field": "issuelinks",
+                    "type_name": type_name,
+                    "direction": "outward",
+                    "other_key": outward_key.strip(),
+                }
+                if type_inward:
+                    entry["type_inward"] = type_inward
+                if type_outward:
+                    entry["type_outward"] = type_outward
+                links.append(entry)
             elif isinstance(inward_key, str) and inward_key.strip() and type_name:
-                links.append(
-                    {
-                        "field": "issuelinks",
-                        "type_name": type_name,
-                        "direction": "inward",
-                        "other_key": inward_key.strip(),
-                    }
-                )
+                entry = {
+                    "field": "issuelinks",
+                    "type_name": type_name,
+                    "direction": "inward",
+                    "other_key": inward_key.strip(),
+                }
+                if type_inward:
+                    entry["type_inward"] = type_inward
+                if type_outward:
+                    entry["type_outward"] = type_outward
+                links.append(entry)
     return {"v": _PROVIDER_LINKS_VERSION, "issue_key": issue_key, "links": links}
 
 
 def _token_for_unknown(type_name: str) -> str:
-    cleaned = re.sub(r"[^A-Za-z0-9_-]+", "_", type_name.strip())
-    cleaned = cleaned.strip("_") or "unknown"
+    cleaned = re.sub(r"[^\w-]+", "_", type_name.strip(), flags=re.UNICODE)
+    cleaned = cleaned.strip("_")
+    if not cleaned:
+        digest = hashlib.sha256(type_name.encode("utf-8")).hexdigest()[:12]
+        cleaned = f"x{digest}"
     return f"jira:{cleaned}"
 
 
@@ -142,11 +161,30 @@ class JiraLinkTypeMapping:
             mapping = {key.casefold(): value for key, value in self.by_name.items()}
         object.__setattr__(self, "by_name", mapping)
 
-    def resolve(self, type_name: str) -> tuple[str, str]:
-        """Return ``(relation_type, outward_role)`` for a Jira type name."""
+    def resolve(
+        self,
+        type_name: str,
+        *,
+        type_inward: str = "",
+        type_outward: str = "",
+    ) -> tuple[str, str]:
+        """Return ``(relation_type, outward_role)`` for a Jira type.
+
+        Matches ``type.name`` first, then outward/inward phrases so Xray-style
+        types named ``Test`` with phrases ``tests`` / ``is tested by`` resolve.
+        Phrase-only hits always use outward_role ``subject`` so direction logic
+        in the extractor stays consistent.
+        """
         found = self.by_name.get(type_name.casefold())
         if found is not None:
             return found
+        for phrase in (type_outward, type_inward):
+            if not phrase:
+                continue
+            found = self.by_name.get(phrase.casefold())
+            if found is not None:
+                relation_type, _role = found
+                return relation_type, "subject"
         return _token_for_unknown(type_name), "subject"
 
 
@@ -184,12 +222,24 @@ class JiraExplicitLinkExtractor:
             assert isinstance(type_name, str)
             assert isinstance(direction, str)
             assert isinstance(other_key, str)
+            type_inward = entry.get("type_inward")
+            type_outward = entry.get("type_outward")
             link = self._canonicalize(
                 issue_key=issue_key,
                 field=field.strip(),
                 type_name=type_name.strip(),
                 direction=direction.strip(),
                 other_key=other_key.strip(),
+                type_inward=(
+                    type_inward.strip()
+                    if isinstance(type_inward, str)
+                    else ""
+                ),
+                type_outward=(
+                    type_outward.strip()
+                    if isinstance(type_outward, str)
+                    else ""
+                ),
             )
             if link is not None:
                 links.append(link)
@@ -203,6 +253,8 @@ class JiraExplicitLinkExtractor:
         type_name: str,
         direction: str,
         other_key: str,
+        type_inward: str = "",
+        type_outward: str = "",
     ) -> ProviderLink | None:
         if field == "parent":
             return ProviderLink(
@@ -220,7 +272,11 @@ class JiraExplicitLinkExtractor:
             )
         if field != "issuelinks":
             return None
-        relation_type, outward_role = self._mapping.resolve(type_name)
+        relation_type, outward_role = self._mapping.resolve(
+            type_name,
+            type_inward=type_inward,
+            type_outward=type_outward,
+        )
         if direction == "outward":
             if outward_role == "subject":
                 subject_key, object_key = issue_key, other_key

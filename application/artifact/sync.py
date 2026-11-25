@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Sequence
 from dataclasses import replace
 from typing import Protocol
 
+from application.observability import log_operation
 from domain.artifact.facts import ArtifactStructuralFacts
 from domain.artifact.models import ArtifactDescriptor, ContextAssignment
 from domain.artifact.ports import ArtifactDescriptorExtractor, ArtifactIndex
 from domain.artifact.rules import ContextClassificationRule
 from domain.knowledge import SourceDocument, SourceReference
+
+logger = logging.getLogger(__name__)
 
 ClassifyFn = Callable[
     [ArtifactStructuralFacts, Sequence[ContextClassificationRule]],
@@ -23,9 +27,11 @@ ComponentIdsForSource = Callable[[SourceReference], tuple[str, ...]]
 class RelationshipRecorder(Protocol):
     """Optional collaborator that records explicit relationships after descriptors."""
 
-    def needs_record(self, source: SourceDocument) -> bool: ...
+    def needs_record(self, source: SourceDocument, *, revision: str) -> bool: ...
 
     def execute(self, source: SourceDocument, *, revision: str) -> None: ...
+
+    def needs_retry(self, reference: SourceReference, *, revision: str) -> bool: ...
 
     def missing_watermark(self, reference: SourceReference) -> bool: ...
 
@@ -99,13 +105,15 @@ class SyncArtifactDescriptors:
         """Retry relationship recording without rewriting descriptors."""
         self._record_relationships(source, revision=revision)
 
-    def needs_relationship_retry(self, reference: SourceReference) -> bool:
+    def needs_relationship_retry(
+        self, reference: SourceReference, *, revision: str
+    ) -> bool:
         """Return whether a skipped source still needs relationship recording."""
         if self._relationships is None:
             return False
         if not self._relationships.supports(reference):
             return False
-        return self._relationships.missing_watermark(reference)
+        return self._relationships.needs_retry(reference, revision=revision)
 
     def on_removed(self, reference: SourceReference) -> None:
         """Delete the descriptor when the catalog source is removed."""
@@ -115,13 +123,22 @@ class SyncArtifactDescriptors:
         if self._relationships is None:
             return
         try:
-            if not self._relationships.needs_record(source):
+            if not self._relationships.needs_record(source, revision=revision):
                 return
             self._relationships.execute(source, revision=revision)
-        except Exception:
-            # Ingest already succeeded; watermark stays unset so the next sync retries.
+        except Exception as error:
+            # Ingest already succeeded; watermark stays unchanged so the next
+            # sync can retry (revision / project / fingerprint compare).
+            log_operation(
+                logger,
+                operation="record_relationships",
+                outcome="error",
+                level=logging.ERROR,
+                error_type=type(error).__name__,
+                source_id=source.reference.source_id,
+                source_type=source.reference.source_type,
+            )
             return
-
 
     def _upsert_with_retry(self, descriptor: ArtifactDescriptor) -> None:
         try:

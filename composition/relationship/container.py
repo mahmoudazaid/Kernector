@@ -7,9 +7,11 @@ from pathlib import Path
 from application.relationship.list import ListArtifactRelationships
 from application.relationship.record import RecordExplicitRelationships
 from domain.knowledge import SourceDocument, SourceType
+from domain.project.errors import ProjectNotFoundError
 from infrastructure.connectors.jira.link_extractor import (
     EXTRACTOR_ID,
     JiraExplicitLinkExtractor,
+    JiraLinkTypeMapping,
     decode_provider_links_raw,
 )
 from infrastructure.config import Settings
@@ -19,6 +21,7 @@ from composition.project.container import (
     build_project_use_cases,
     build_resolve_projects_for_source,
 )
+from packs.software_delivery.relationship.types import RELATION_INVERSE_NAMES
 
 
 def build_relationship_store(settings: Settings) -> SqlRelationshipStore:
@@ -34,6 +37,12 @@ def _jira_raw_from_document(source: SourceDocument) -> dict[str, object] | None:
     return decode_provider_links_raw(source.metadata.extra)
 
 
+def _jira_link_mapping(settings: Settings) -> JiraLinkTypeMapping:
+    """Build the link-type table; Settings reserved for operator overrides."""
+    del settings
+    return JiraLinkTypeMapping()
+
+
 def build_record_explicit_relationships(
     settings: Settings,
 ) -> RecordExplicitRelationships:
@@ -42,7 +51,9 @@ def build_record_explicit_relationships(
         build_relationship_store(settings),
         build_artifact_index(settings),
         project_ids_for=resolve.execute,
-        extractors={SourceType.JIRA: JiraExplicitLinkExtractor()},
+        extractors={
+            SourceType.JIRA: JiraExplicitLinkExtractor(_jira_link_mapping(settings))
+        },
         raw_from_document=_jira_raw_from_document,
         extractor_id=EXTRACTOR_ID,
     )
@@ -57,7 +68,7 @@ def build_list_artifact_relationships(
     def project_exists(project_id: str) -> bool:
         try:
             projects.get.execute(project_id)
-        except Exception:
+        except ProjectNotFoundError:
             return False
         return True
 
@@ -66,4 +77,5 @@ def build_list_artifact_relationships(
         build_artifact_index(settings),
         project_exists=project_exists,
         project_ids_for=resolve.execute,
+        inverse_names=RELATION_INVERSE_NAMES,
     )

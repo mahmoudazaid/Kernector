@@ -5,24 +5,17 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
+from application.artifact.lookup import _matching_part
 from domain.artifact.models import ArtifactRef
 from domain.artifact.ports import ArtifactIndex
 from domain.knowledge import SourceReference
 from domain.project.errors import ProjectNotFoundError
 from domain.relationship.errors import ArtifactNotVisibleError
-from domain.relationship.models import Relationship, UnresolvedKey
+from domain.relationship.models import EvidenceRef, Relationship, UnresolvedKey
 from domain.relationship.ports import RelationshipStore
 
 ProjectIdsForSource = Callable[[SourceReference], tuple[str, ...]]
 ProjectExists = Callable[[str], bool]
-
-_DEFAULT_INVERSE: Mapping[str, str] = {
-    "tests": "tested_by",
-    "blocks": "blocked_by",
-    "child_of": "parent_of",
-    "relates_to": "relates_to",
-    "affects": "affected_by",
-}
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,7 +74,7 @@ class ListArtifactRelationships:
         self._index = index
         self._project_exists = project_exists
         self._project_ids_for = project_ids_for
-        self._inverse_names = dict(inverse_names or _DEFAULT_INVERSE)
+        self._inverse_names = dict(inverse_names or {})
 
     def execute(
         self,
@@ -103,15 +96,28 @@ class ListArtifactRelationships:
         views: list[RelationshipView] = []
         seen: set[str] = set()
         for descriptor in visible:
-            ref = ArtifactRef(descriptor.reference)
+            part = _matching_part(descriptor, key)
+            ref = ArtifactRef(
+                descriptor.reference,
+                part_key=part.part_key if part is not None else None,
+            )
+            alias_parts: list[str] = [key, *descriptor.external_keys]
+            if part is not None:
+                alias_parts.append(part.part_key)
+                if part.operation_id is not None:
+                    alias_parts.append(part.operation_id)
+            aliases = tuple(dict.fromkeys(alias_parts))
             edges = self._store.list_for_artifact(
                 project_id,
                 ref,
                 filters,
-                aliases=descriptor.external_keys,
+                aliases=aliases,
             )
             for edge in edges:
                 if edge.relationship_id in seen:
+                    continue
+                kept_evidence = self._visible_evidence(edge, project_id)
+                if not kept_evidence:
                     continue
                 seen.add(edge.relationship_id)
                 views.append(
@@ -119,10 +125,21 @@ class ListArtifactRelationships:
                         edge,
                         listed=ref,
                         listed_key=key,
+                        evidence=kept_evidence,
                         contexts_for=self._contexts_for,
                     )
                 )
         return tuple(views)
+
+    def _visible_evidence(
+        self, edge: Relationship, project_id: str
+    ) -> tuple[EvidenceRef, ...]:
+        """Keep evidence whose source is still associated with ``project_id``."""
+        return tuple(
+            item
+            for item in edge.evidence
+            if project_id in self._project_ids_for(item.source)
+        )
 
     def _contexts_for(self, endpoint: ArtifactRef | UnresolvedKey) -> tuple[str, ...]:
         if isinstance(endpoint, UnresolvedKey):
@@ -138,6 +155,7 @@ class ListArtifactRelationships:
         *,
         listed: ArtifactRef,
         listed_key: str,
+        evidence: tuple[EvidenceRef, ...],
         contexts_for: Callable[[ArtifactRef | UnresolvedKey], tuple[str, ...]],
     ) -> RelationshipView:
         listed_is_object = self._same_endpoint(edge.object, listed, listed_key)
@@ -167,7 +185,7 @@ class ListArtifactRelationships:
                     locator=item.locator,
                     extractor_id=item.extractor_id,
                 )
-                for item in edge.evidence
+                for item in evidence
             ),
             decision_actor=edge.decision_actor,
             decision_at=edge.decision_at,
@@ -202,7 +220,8 @@ class ListArtifactRelationships:
     ) -> bool:
         if isinstance(endpoint, UnresolvedKey):
             return endpoint.key == listed_key
-        return (
-            endpoint.reference == listed.reference
-            and endpoint.part_key == listed.part_key
-        )
+        if endpoint.reference != listed.reference:
+            return False
+        if listed.part_key is None:
+            return True
+        return endpoint.part_key == listed.part_key

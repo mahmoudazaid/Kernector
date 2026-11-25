@@ -269,5 +269,148 @@ def test_skips_when_source_has_no_project(
         },
         raw_from_document=_raw,
     )
-    recorder.execute(_source("PROJ-140", "inst/PROJ:PROJ-140"), revision="r1")
+    source = _source("PROJ-140", "inst/PROJ:PROJ-140")
+    recorder.execute(source, revision="r1")
     assert store.list_for_artifact("prj_orders", UnresolvedKey("PROJ-123")) == ()
+    assert store.get_record_watermark(source.reference) is None
+    assert recorder.needs_retry(source.reference, revision="r1") is False
+
+
+def test_records_after_project_association(
+    index: SqlArtifactIndex, store: SqlRelationshipStore
+) -> None:
+    index.upsert(_descriptor("inst/PROJ:PROJ-140", "PROJ-140"))
+    index.upsert(_descriptor("inst/PROJ:PROJ-123", "PROJ-123"))
+    projects: dict[str, tuple[str, ...]] = {"ids": ()}
+    recorder = RecordExplicitRelationships(
+        store,
+        index,
+        project_ids_for=lambda _ref: projects["ids"],
+        extractors={
+            "jira": _FixedExtractor(
+                (
+                    ProviderLink(
+                        relation_type="tests",
+                        subject_key="PROJ-140",
+                        object_key="PROJ-123",
+                        locator="field=issuelinks;type=Tests;dir=out;key=PROJ-123",
+                    ),
+                )
+            )
+        },
+        raw_from_document=_raw,
+    )
+    source = _source("PROJ-140", "inst/PROJ:PROJ-140")
+    recorder.execute(source, revision="r1")
+    assert store.get_record_watermark(source.reference) is None
+
+    projects["ids"] = ("prj_orders",)
+    assert recorder.needs_retry(source.reference, revision="r1") is True
+    recorder.execute(source, revision="r1")
+
+    listed = store.list_for_artifact(
+        "prj_orders", ArtifactRef(SourceReference("inst/PROJ:PROJ-123", "jira"))
+    )
+    assert len(listed) == 1
+
+
+def test_needs_retry_when_revision_advances(
+    index: SqlArtifactIndex, store: SqlRelationshipStore
+) -> None:
+    index.upsert(_descriptor("inst/PROJ:PROJ-140", "PROJ-140"))
+    index.upsert(_descriptor("inst/PROJ:PROJ-123", "PROJ-123"))
+    recorder = RecordExplicitRelationships(
+        store,
+        index,
+        project_ids_for=lambda _ref: ("prj_orders",),
+        extractors={
+            "jira": _FixedExtractor(
+                (
+                    ProviderLink(
+                        relation_type="tests",
+                        subject_key="PROJ-140",
+                        object_key="PROJ-123",
+                        locator="field=issuelinks;type=Tests;dir=out;key=PROJ-123",
+                    ),
+                )
+            )
+        },
+        raw_from_document=_raw,
+    )
+    source = _source("PROJ-140", "inst/PROJ:PROJ-140")
+    recorder.execute(source, revision="r1")
+    assert recorder.needs_retry(source.reference, revision="r1") is False
+    assert recorder.needs_retry(source.reference, revision="r2") is True
+
+
+def test_keeps_unresolved_when_only_other_instance_matches(
+    index: SqlArtifactIndex, store: SqlRelationshipStore
+) -> None:
+    index.upsert(_descriptor("old-instance/PROJ:PROJ-123", "PROJ-123"))
+    recorder = RecordExplicitRelationships(
+        store,
+        index,
+        project_ids_for=lambda _ref: ("prj_orders",),
+        extractors={
+            "jira": _FixedExtractor(
+                (
+                    ProviderLink(
+                        relation_type="blocks",
+                        subject_key="PROJ-100",
+                        object_key="PROJ-123",
+                        locator="field=issuelinks;type=Blocks;dir=out;key=PROJ-123",
+                    ),
+                )
+            )
+        },
+        raw_from_document=_raw,
+    )
+    index.upsert(_descriptor("new-instance/PROJ:PROJ-100", "PROJ-100"))
+    recorder.execute(
+        _source("PROJ-100", "new-instance/PROJ:PROJ-100"),
+        revision="r1",
+    )
+    listed = store.list_for_artifact(
+        "prj_orders",
+        ArtifactRef(SourceReference("new-instance/PROJ:PROJ-100", "jira")),
+    )
+    assert len(listed) == 1
+    assert isinstance(listed[0].object, UnresolvedKey)
+    assert listed[0].object.key == "PROJ-123"
+
+
+def test_preserves_part_key_on_resolved_endpoint(
+    index: SqlArtifactIndex, store: SqlRelationshipStore
+) -> None:
+    index.upsert(_descriptor("inst/api:openapi", "openapi"))
+    recorder = RecordExplicitRelationships(
+        store,
+        index,
+        project_ids_for=lambda _ref: ("prj_orders",),
+        extractors={
+            "jira": _FixedExtractor(
+                (
+                    ProviderLink(
+                        relation_type="tests",
+                        subject_key="PROJ-140",
+                        object_key="openapi",
+                        locator="field=issuelinks;type=Tests;dir=out;key=openapi",
+                        object_part_key="GET /orders",
+                    ),
+                )
+            )
+        },
+        raw_from_document=_raw,
+    )
+    index.upsert(_descriptor("inst/PROJ:PROJ-140", "PROJ-140"))
+    recorder.execute(_source("PROJ-140", "inst/PROJ:PROJ-140"), revision="r1")
+    listed = store.list_for_artifact(
+        "prj_orders",
+        ArtifactRef(
+            SourceReference("inst/api:openapi", "jira"),
+            part_key="GET /orders",
+        ),
+    )
+    assert len(listed) == 1
+    assert isinstance(listed[0].object, ArtifactRef)
+    assert listed[0].object.part_key == "GET /orders"
