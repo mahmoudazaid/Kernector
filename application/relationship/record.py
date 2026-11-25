@@ -164,6 +164,8 @@ class RecordExplicitRelationships:
 
     def resolve_arriving(self, source: SourceDocument) -> None:
         """Upgrade unresolved endpoints that match ``source`` without recording."""
+        if not self.supports(source.reference):
+            return
         self._resolve_arriving_artifact(source=source, seen_at=self._now())
 
     def execute(self, source: SourceDocument, *, revision: str) -> None:

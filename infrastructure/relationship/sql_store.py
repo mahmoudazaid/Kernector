@@ -253,8 +253,8 @@ class SqlRelationshipStore:
                 """
                 INSERT OR IGNORE INTO relationship_evidence (
                     workspace_id, relationship_id, source_type, source_id,
-                    revision, locator, extractor_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    revision, locator, extractor_id, recorded_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     self._workspace_id,
@@ -264,6 +264,7 @@ class SqlRelationshipStore:
                     evidence.revision,
                     evidence.locator,
                     evidence.extractor_id,
+                    seen_at,
                 ),
             )
             connection.execute("COMMIT")
@@ -371,46 +372,63 @@ class SqlRelationshipStore:
     ) -> tuple[Relationship, ...]:
         connection = _connection.connect(self._path)
         try:
+            # Exact unresolved_key matches (indexed). Avoid LIKE so '_' in
+            # Jira keys is literal and skipped syncs stay cheap.
             if part_key is not None:
-                token = unresolved_token(key, part_key=part_key)
                 rows = connection.execute(
                     """
-                    SELECT * FROM relationships
-                    WHERE workspace_id = ?
-                      AND (
-                        subject_token = ?
-                        OR object_token = ?
-                      )
-                    ORDER BY project_id COLLATE BINARY, relationship_id COLLATE BINARY
-                    """,
-                    (self._workspace_id, token, token),
-                ).fetchall()
-            else:
-                # Include every part variant for this key (u:key\n, u:key\npart).
-                prefix = f"u:{key}\n"
-                rows = connection.execute(
-                    """
-                    SELECT * FROM relationships
-                    WHERE workspace_id = ?
-                      AND (
-                        subject_token = ?
-                        OR subject_token LIKE ?
-                        OR object_token = ?
-                        OR object_token LIKE ?
-                      )
+                    SELECT * FROM (
+                        SELECT * FROM relationships
+                        WHERE workspace_id = ?
+                          AND subject_unresolved_key = ?
+                          AND subject_part_key = ?
+                        UNION ALL
+                        SELECT * FROM relationships
+                        WHERE workspace_id = ?
+                          AND object_unresolved_key = ?
+                          AND object_part_key = ?
+                    )
                     ORDER BY project_id COLLATE BINARY, relationship_id COLLATE BINARY
                     """,
                     (
                         self._workspace_id,
-                        prefix,
-                        f"{prefix}%",
-                        prefix,
-                        f"{prefix}%",
+                        key,
+                        part_key,
+                        self._workspace_id,
+                        key,
+                        part_key,
                     ),
                 ).fetchall()
-            return tuple(
-                self._relationship_from_row(connection, row) for row in rows
-            )
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT * FROM (
+                        SELECT * FROM relationships
+                        WHERE workspace_id = ?
+                          AND subject_unresolved_key = ?
+                        UNION ALL
+                        SELECT * FROM relationships
+                        WHERE workspace_id = ?
+                          AND object_unresolved_key = ?
+                    )
+                    ORDER BY project_id COLLATE BINARY, relationship_id COLLATE BINARY
+                    """,
+                    (
+                        self._workspace_id,
+                        key,
+                        self._workspace_id,
+                        key,
+                    ),
+                ).fetchall()
+            seen: set[str] = set()
+            relationships: list[Relationship] = []
+            for row in rows:
+                relationship_id = row["relationship_id"]
+                if relationship_id in seen:
+                    continue
+                seen.add(relationship_id)
+                relationships.append(self._relationship_from_row(connection, row))
+            return tuple(relationships)
         finally:
             connection.close()
 
@@ -831,10 +849,10 @@ class SqlRelationshipStore:
             """
             INSERT OR IGNORE INTO relationship_evidence (
                 workspace_id, relationship_id, source_type, source_id,
-                revision, locator, extractor_id
+                revision, locator, extractor_id, recorded_at
             )
             SELECT workspace_id, ?, source_type, source_id, revision, locator,
-                   extractor_id
+                   extractor_id, recorded_at
             FROM relationship_evidence
             WHERE workspace_id = ? AND relationship_id = ?
             """,
@@ -859,22 +877,27 @@ class SqlRelationshipStore:
     def _retain_newest_evidence_per_source(
         self, connection: sqlite3.Connection, relationship_id: str
     ) -> None:
-        """Drop superseded revisions so merged edges keep one revision per source."""
+        """Drop superseded revisions so merged edges keep one revision per source.
+
+        Newest is by ``recorded_at`` (when Kernector wrote the row), not by the
+        opaque connector ``revision`` string.
+        """
         rows = connection.execute(
             """
-            SELECT source_type, source_id, revision
+            SELECT source_type, source_id, revision, recorded_at
             FROM relationship_evidence
             WHERE workspace_id = ? AND relationship_id = ?
             """,
             (self._workspace_id, relationship_id),
         ).fetchall()
-        newest: dict[tuple[str, str], str] = {}
+        newest: dict[tuple[str, str], tuple[str, str]] = {}
         for row in rows:
             key = (row["source_type"], row["source_id"])
+            recorded_at = row["recorded_at"] or ""
             current = newest.get(key)
-            if current is None or row["revision"] > current:
-                newest[key] = row["revision"]
-        for (source_type, source_id), revision in newest.items():
+            if current is None or recorded_at > current[0]:
+                newest[key] = (recorded_at, row["revision"])
+        for (source_type, source_id), (_recorded_at, revision) in newest.items():
             connection.execute(
                 """
                 DELETE FROM relationship_evidence

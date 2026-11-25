@@ -268,6 +268,66 @@ def test_confirm_reject_round_trip_preserves_inferred_origin(
         )
 
 
+def test_list_unresolved_for_key_treats_underscore_literally(
+    store: SqlRelationshipStore,
+) -> None:
+    store.upsert_from_evidence(
+        project_id="prj_orders",
+        subject=_ref("inst/PROJ:MYXPROJ-1"),
+        relation_type="relates_to",
+        object=UnresolvedKey("MYXPROJ-2"),
+        origin=ORIGIN_PROVIDER_DECLARED,
+        verification=VERIFICATION_VERIFIED,
+        confidence=1.0,
+        freshness="current",
+        evidence=_evidence("inst/PROJ:MYXPROJ-1"),
+        seen_at="2026-10-01T12:00:00Z",
+    )
+
+    assert store.list_unresolved_for_key("MY_PROJ-2") == ()
+    matched = store.list_unresolved_for_key("MYXPROJ-2")
+    assert len(matched) == 1
+    assert isinstance(matched[0].object, UnresolvedKey)
+    assert matched[0].object.key == "MYXPROJ-2"
+
+
+def test_merge_retains_newest_evidence_by_recorded_at(
+    store: SqlRelationshipStore,
+) -> None:
+    store.upsert_from_evidence(
+        project_id="prj_orders",
+        subject=_ref("inst/PROJ:PROJ-140"),
+        relation_type="tests",
+        object=UnresolvedKey("PROJ-123"),
+        origin=ORIGIN_PROVIDER_DECLARED,
+        verification=VERIFICATION_VERIFIED,
+        confidence=1.0,
+        freshness="current",
+        evidence=_evidence(revision="10"),
+        seen_at="2026-10-01T12:00:00Z",
+        object_aliases=("PROJ-123",),
+    )
+    merged = store.upsert_from_evidence(
+        project_id="prj_orders",
+        subject=_ref("inst/PROJ:PROJ-140"),
+        relation_type="tests",
+        object=_ref("inst/PROJ:PROJ-123"),
+        origin=ORIGIN_PROVIDER_DECLARED,
+        verification=VERIFICATION_VERIFIED,
+        confidence=1.0,
+        freshness="current",
+        evidence=_evidence(revision="9"),
+        seen_at="2026-10-02T12:00:00Z",
+        object_aliases=("PROJ-123",),
+    )
+
+    loaded = store.get(merged.relationship_id)
+    assert loaded is not None
+    assert len(loaded.evidence) == 1
+    # Lexicographically "9" < "10", but recorded_at of "9" is newer.
+    assert loaded.evidence[0].revision == "9"
+
+
 def test_mark_stale_for_evidence_ignores_matching_revision(
     store: SqlRelationshipStore,
 ) -> None:

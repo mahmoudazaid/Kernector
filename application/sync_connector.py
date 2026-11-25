@@ -290,11 +290,26 @@ class SyncConnectorDocuments:
         if not callable(needs) or not callable(retry):
             return
         links_fingerprint = document.extra.get("kernector.links_fingerprint.v1")
-        if not needs(
-            document.reference,
-            revision=document.revision,
-            links_fingerprint=links_fingerprint,
-        ):
+        try:
+            should_retry = needs(
+                document.reference,
+                revision=document.revision,
+                links_fingerprint=links_fingerprint,
+            )
+        except Exception as error:
+            # Relationship lookups are best-effort after ingest; a failure on
+            # one skipped issue must not abort the rest of the sync.
+            log_operation(
+                logger,
+                operation="relationship_retry_check",
+                outcome="error",
+                level=logging.ERROR,
+                error_type=type(error).__name__,
+                source_id=document.source_id,
+                source_type=document.source_type,
+            )
+            return
+        if not should_retry:
             return
         fetched = self._fetch(document, previous)
         if isinstance(fetched, ConnectorSyncOutcome):

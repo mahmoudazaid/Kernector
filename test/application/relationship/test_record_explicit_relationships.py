@@ -17,6 +17,8 @@ from domain.knowledge import (
 )
 from domain.relationship.models import (
     ORIGIN_PROVIDER_DECLARED,
+    VERIFICATION_VERIFIED,
+    EvidenceRef,
     ProviderLink,
     UnresolvedKey,
 )
@@ -380,6 +382,59 @@ def test_keeps_unresolved_when_only_other_instance_matches(
     assert len(listed) == 1
     assert isinstance(listed[0].object, UnresolvedKey)
     assert listed[0].object.key == "PROJ-123"
+
+
+def test_resolve_arriving_skips_unsupported_sources(
+    index: SqlArtifactIndex, store: SqlRelationshipStore
+) -> None:
+    github_ref = SourceReference("owner/repo:openapi.yaml", "github")
+    index.upsert(
+        ArtifactDescriptor(
+            reference=github_ref,
+            revision="r1",
+            kind=ArtifactKind.API_SPEC,
+            external_keys=("openapi",),
+            title="openapi",
+        )
+    )
+    store.upsert_from_evidence(
+        project_id="prj_orders",
+        subject=ArtifactRef(SourceReference("inst/PROJ:PROJ-140", "jira")),
+        relation_type="tests",
+        object=UnresolvedKey("openapi"),
+        origin=ORIGIN_PROVIDER_DECLARED,
+        verification=VERIFICATION_VERIFIED,
+        confidence=1.0,
+        freshness="current",
+        evidence=EvidenceRef(
+            source=SourceReference("inst/PROJ:PROJ-140", "jira"),
+            revision="r1",
+            locator="field=issuelinks;type=Tests;dir=out;key=openapi",
+            extractor_id="jira_explicit_links",
+        ),
+        seen_at="2026-10-01T12:00:00Z",
+    )
+    recorder = RecordExplicitRelationships(
+        store,
+        index,
+        project_ids_for=lambda _ref: (),
+        extractors={"jira": _FixedExtractor(())},
+        raw_from_document=_raw,
+    )
+    source = SourceDocument(
+        SourceMetadata(
+            reference=github_ref,
+            title="openapi",
+            provider="github",
+            content_format="json",
+            extra={},
+        ),
+        "{}",
+    )
+    recorder.resolve_arriving(source)
+    pending = store.list_unresolved_for_key("openapi")
+    assert len(pending) == 1
+    assert isinstance(pending[0].object, UnresolvedKey)
 
 
 def test_preserves_part_key_on_resolved_endpoint(
