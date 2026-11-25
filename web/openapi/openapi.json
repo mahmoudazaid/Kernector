@@ -3041,6 +3041,192 @@
         "title": "ProjectScopeResponse",
         "type": "object"
       },
+      "RelationshipEndpointResponse": {
+        "description": "One end of a relationship edge.",
+        "properties": {
+          "contexts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Contexts",
+            "type": "array"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "kind": {
+            "enum": ["artifact", "unresolved"],
+            "title": "Kind",
+            "type": "string"
+          },
+          "part_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Part Key"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "source_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Type"
+          }
+        },
+        "required": ["kind"],
+        "title": "RelationshipEndpointResponse",
+        "type": "object"
+      },
+      "RelationshipEvidenceResponse": {
+        "description": "One evidence observation supporting a relationship.",
+        "properties": {
+          "extractor_id": {
+            "title": "Extractor Id",
+            "type": "string"
+          },
+          "locator": {
+            "title": "Locator",
+            "type": "string"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_type": {
+            "title": "Source Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_type",
+          "source_id",
+          "revision",
+          "locator",
+          "extractor_id"
+        ],
+        "title": "RelationshipEvidenceResponse",
+        "type": "object"
+      },
+      "RelationshipResponse": {
+        "description": "Evidence-backed relationship as seen from a listed artifact.",
+        "properties": {
+          "confidence": {
+            "title": "Confidence",
+            "type": "number"
+          },
+          "decision_actor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Actor"
+          },
+          "decision_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision At"
+          },
+          "direction": {
+            "enum": ["outward", "inward"],
+            "title": "Direction",
+            "type": "string"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/RelationshipEvidenceResponse"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "freshness": {
+            "title": "Freshness",
+            "type": "string"
+          },
+          "object": {
+            "$ref": "#/components/schemas/RelationshipEndpointResponse"
+          },
+          "origin": {
+            "title": "Origin",
+            "type": "string"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "relation_type": {
+            "title": "Relation Type",
+            "type": "string"
+          },
+          "relationship_id": {
+            "title": "Relationship Id",
+            "type": "string"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/RelationshipEndpointResponse"
+          },
+          "verification": {
+            "title": "Verification",
+            "type": "string"
+          }
+        },
+        "required": [
+          "relationship_id",
+          "project_id",
+          "relation_type",
+          "direction",
+          "subject",
+          "object",
+          "origin",
+          "verification",
+          "freshness",
+          "confidence",
+          "evidence"
+        ],
+        "title": "RelationshipResponse",
+        "type": "object"
+      },
       "ResponseFeedbackResponse": {
         "description": "Projected feedback record (no prompts, answers, or credentials).",
         "properties": {
@@ -7728,6 +7914,128 @@
           }
         },
         "summary": "Get Project",
+        "tags": ["projects"]
+      }
+    },
+    "/api/v1/projects/{project_id}/artifacts/{key}/relationships": {
+      "get": {
+        "description": "List evidence-backed relationships for an artifact key in a project.",
+        "operationId": "list_artifact_relationships_api_v1_projects__project_id__artifacts__key__relationships_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "origin",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Origin"
+            }
+          },
+          {
+            "in": "query",
+            "name": "verification",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Verification"
+            }
+          },
+          {
+            "in": "query",
+            "name": "freshness",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Freshness"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RelationshipResponse"
+                  },
+                  "title": "Response List Artifact Relationships Api V1 Projects  Project Id  Artifacts  Key  Relationships Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "List Artifact Relationships",
         "tags": ["projects"]
       }
     },
