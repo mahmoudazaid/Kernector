@@ -12,7 +12,7 @@ export type AuthPreferences = {
 };
 
 /** Whether preferences have been fetched for the current session generation. */
-export type PreferencesStatus = "idle" | "loading" | "ready";
+export type PreferencesStatus = "idle" | "loading" | "ready" | "unavailable";
 
 export type AuthSessionState = {
   user: AuthUser | null;

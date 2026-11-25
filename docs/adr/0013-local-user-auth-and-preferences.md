@@ -56,7 +56,8 @@ authorization (EPIC #257).
    `provider` + `model`, validated against the runtime settings catalog.
    Missing preferences do not invent a row; stale pairs are returned with
    `usable: false` and chat falls back to catalog defaults. Generation
-   knobs for signed-in users live in a separate client key; the anonymous
+   knobs for signed-in users live in a per-user client key
+   (`kernector:generation-settings:v1:<user_id>`); the anonymous
    `localStorage` provider/model pair is not written while signed in.
 
 9. **Hub login gate** — The Next.js Hub requires a signed-in session for

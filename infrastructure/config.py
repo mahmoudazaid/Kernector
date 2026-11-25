@@ -902,9 +902,7 @@ def _load_auth_settings() -> AuthSettings:
     lockout = _env_int("AUTH_LOGIN_LOCKOUT_SECONDS", "900")
     if lockout <= 0:
         raise ValueError(f"AUTH_LOGIN_LOCKOUT_SECONDS must be > 0, got {lockout}")
-    cookie_name = os.getenv("AUTH_COOKIE_NAME", "kernector_session").strip()
-    if not cookie_name:
-        raise ValueError("AUTH_COOKIE_NAME must be non-empty")
+    # Cookie name is fixed so the Next middleware/BFF stay in sync (ADR 0013).
     return AuthSettings(
         sql_path=sql_path,
         session_ttl_seconds=session_ttl,
@@ -912,7 +910,7 @@ def _load_auth_settings() -> AuthSettings:
         trusted_origins=trusted,
         login_max_failures=max_failures,
         login_lockout_seconds=lockout,
-        cookie_name=cookie_name,
+        cookie_name="kernector_session",
     )
 
 

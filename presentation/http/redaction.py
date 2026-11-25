@@ -18,6 +18,8 @@ _CSRF_HEADER = re.compile(
     r'(?:"([^"\\]*(?:\\.[^"\\]*)*)"|\'([^\'\\]*(?:\\.[^\'\\]*)*)\'|([^\s,;]+))'
 )
 
+_UVICORN_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
+
 
 def redact_secrets(text: str) -> str:
     """Return *text* with passwords, session cookies, and CSRF tokens masked."""
@@ -37,22 +39,15 @@ def redact_secrets(text: str) -> str:
 
 
 class SecretRedactingFilter(logging.Filter):
-    """Redact secrets in log messages, args, and exception text."""
+    """Redact secrets in the rendered log message and exception text."""
 
     def filter(self, record: logging.LogRecord) -> bool:
-        if isinstance(record.msg, str):
-            record.msg = redact_secrets(record.msg)
-        if record.args:
-            if isinstance(record.args, dict):
-                record.args = {
-                    key: redact_secrets(value) if isinstance(value, str) else value
-                    for key, value in record.args.items()
-                }
-            else:
-                record.args = tuple(
-                    redact_secrets(arg) if isinstance(arg, str) else arg
-                    for arg in record.args
-                )
+        try:
+            rendered = record.getMessage()
+        except Exception:
+            rendered = str(record.msg)
+        record.msg = redact_secrets(rendered)
+        record.args = None
         if record.exc_info and not record.exc_text:
             record.exc_text = redact_secrets(
                 logging.Formatter().formatException(record.exc_info)
@@ -62,27 +57,23 @@ class SecretRedactingFilter(logging.Filter):
         return True
 
 
-def install_secret_redacting_filter(logger: logging.Logger | None = None) -> None:
-    """Attach :class:`SecretRedactingFilter` to *logger* and its handlers."""
-    target = logger if logger is not None else logging.getLogger()
-    filt = SecretRedactingFilter()
-    if not any(isinstance(existing, SecretRedactingFilter) for existing in target.filters):
-        target.addFilter(filt)
-    for handler in list(target.handlers):
+def _attach_filter(logger: logging.Logger, filt: SecretRedactingFilter) -> None:
+    if not any(isinstance(existing, SecretRedactingFilter) for existing in logger.filters):
+        logger.addFilter(filt)
+    for handler in list(logger.handlers):
         if not any(
             isinstance(existing, SecretRedactingFilter) for existing in handler.filters
         ):
             handler.addFilter(filt)
-    # Also cover root handlers used by uvicorn / basicConfig.
+
+
+def install_secret_redacting_filter(logger: logging.Logger | None = None) -> None:
+    """Attach :class:`SecretRedactingFilter` to *logger*, root, and uvicorn."""
+    filt = SecretRedactingFilter()
+    target = logger if logger is not None else logging.getLogger()
+    _attach_filter(target, filt)
     root = logging.getLogger()
     if target is not root:
-        if not any(
-            isinstance(existing, SecretRedactingFilter) for existing in root.filters
-        ):
-            root.addFilter(filt)
-        for handler in list(root.handlers):
-            if not any(
-                isinstance(existing, SecretRedactingFilter)
-                for existing in handler.filters
-            ):
-                handler.addFilter(filt)
+        _attach_filter(root, filt)
+    for name in _UVICORN_LOGGERS:
+        _attach_filter(logging.getLogger(name), filt)

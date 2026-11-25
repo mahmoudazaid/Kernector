@@ -95,8 +95,9 @@ uv run python -m presentation.cli.create_user --username alice
 
 Sign in at `/login`. Auth and preferences go through the Next.js same-origin
 BFF (`/api/v1/auth/*`, `/api/v1/me/preferences`). See
-[ADR 0013](docs/adr/0013-local-user-auth-and-preferences.md). Chat and
-documents stay available without signing in. Workspace membership is #446.
+[ADR 0013](docs/adr/0013-local-user-auth-and-preferences.md). The Hub requires
+a session for every product page (browser gate only — FastAPI product routes
+still accept anonymous calls). Workspace membership is #446.
 
 ### Run the MCP Streamable HTTP server
 

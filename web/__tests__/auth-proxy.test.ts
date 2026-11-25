@@ -75,4 +75,27 @@ describe("auth-proxy", () => {
     expect(response.headers.get("set-cookie")).toContain("kernector_session=");
     expect(await response.text()).toBe("");
   });
+
+  it("clears the session cookie on /me 401", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        return new Response(JSON.stringify({ detail: "Authentication is required." }), {
+          status: 401,
+          headers: { "content-type": "application/json" },
+        });
+      }),
+    );
+
+    const response = await proxyAuthApi(
+      new Request("http://localhost:3000/api/v1/auth/me"),
+      "/api/v1/auth/me",
+      { method: "GET" },
+    );
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get("set-cookie")).toMatch(
+      /kernector_session=.*Max-Age=0/i,
+    );
+  });
 });

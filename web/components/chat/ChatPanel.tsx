@@ -953,7 +953,12 @@ export function ChatPanel({
     const auth = getAuthSession();
     const authPrefs = auth.preferences;
     const stored = loadRuntimeSettings();
-    const knobs = loadGenerationSettings() ?? stored?.settings ?? {};
+    const knobs =
+      (auth.user !== null
+        ? loadGenerationSettings(auth.user.user_id)
+        : null) ??
+      stored?.settings ??
+      {};
     const fromAuth =
       auth.user !== null &&
       authPrefs !== null &&

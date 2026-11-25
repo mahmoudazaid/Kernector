@@ -35,35 +35,14 @@ export function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const hasSession = Boolean(request.cookies.get(AUTH_COOKIE_NAME)?.value);
 
+  // Cookie presence only — AuthGate validates via /me. Never bounce /login away
+  // here: a stale cookie would otherwise lock the user out of the form.
   if (!hasSession && !isPublicPath(pathname) && !isApiPath(pathname)) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
     const next = `${pathname}${search}`;
     loginUrl.search = `?next=${encodeURIComponent(next)}`;
     const redirect = NextResponse.redirect(loginUrl);
-    redirect.headers.set("Content-Security-Policy", csp);
-    redirect.headers.set("X-Content-Type-Options", "nosniff");
-    redirect.headers.set("Referrer-Policy", "no-referrer");
-    return redirect;
-  }
-
-  if (hasSession && pathname === "/login") {
-    const nextRaw = request.nextUrl.searchParams.get("next");
-    const dest = request.nextUrl.clone();
-    if (
-      nextRaw &&
-      nextRaw.startsWith("/") &&
-      !nextRaw.startsWith("//") &&
-      nextRaw !== "/login"
-    ) {
-      dest.pathname = nextRaw.split("?")[0] || "/";
-      const q = nextRaw.includes("?") ? nextRaw.slice(nextRaw.indexOf("?") + 1) : "";
-      dest.search = q ? `?${q}` : "";
-    } else {
-      dest.pathname = "/";
-      dest.search = "";
-    }
-    const redirect = NextResponse.redirect(dest);
     redirect.headers.set("Content-Security-Policy", csp);
     redirect.headers.set("X-Content-Type-Options", "nosniff");
     redirect.headers.set("Referrer-Policy", "no-referrer");

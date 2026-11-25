@@ -22,6 +22,7 @@ from presentation.http.auth_session import (
     clear_session_cookie,
     origin_is_trusted,
     request_wants_secure_cookie,
+    session_cookie_clear_header,
     set_session_cookie,
     with_no_store,
 )
@@ -111,7 +112,17 @@ def me(request: Request, response: Response) -> MeResponse:
         store, auth, request.cookies.get(auth.cookie_name)
     )
     if resolved is None:
-        raise HTTPException(status_code=401, detail="Authentication is required.")
+        secure = request_wants_secure_cookie(request)
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication is required.",
+            headers={
+                "Set-Cookie": session_cookie_clear_header(
+                    cookie_name=auth.cookie_name, secure=secure
+                ),
+                "Cache-Control": "no-store",
+            },
+        )
     with_no_store(response)
     return MeResponse(
         user_id=resolved.principal.user_id,
@@ -137,12 +148,21 @@ def logout(
     store = build_auth_store(settings)
     session_id = request.cookies.get(auth.cookie_name)
     resolved = resolve_session(store, auth, session_id)
+    secure = request_wants_secure_cookie(request)
     if resolved is None:
-        raise HTTPException(status_code=401, detail="Authentication is required.")
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication is required.",
+            headers={
+                "Set-Cookie": session_cookie_clear_header(
+                    cookie_name=auth.cookie_name, secure=secure
+                ),
+                "Cache-Control": "no-store",
+            },
+        )
     if not require_csrf(x_csrf_token, resolved.csrf_token):
         raise HTTPException(status_code=403, detail="CSRF validation failed")
     store.revoke_session(resolved.session_id)
-    secure = request_wants_secure_cookie(request)
     out = Response(status_code=204)
     clear_session_cookie(out, cookie_name=auth.cookie_name, secure=secure)
     with_no_store(out)

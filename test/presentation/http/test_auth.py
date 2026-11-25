@@ -130,6 +130,8 @@ def test_logout_requires_csrf_and_invalidates(auth_env) -> None:
     assert ok.headers.get("cache-control") == "no-store"
     me = client.get("/api/v1/auth/me")
     assert me.status_code == 401
+    # Stale/missing session must clear the cookie so the Hub login gate can recover.
+    assert "kernector_session=" in me.headers.get("set-cookie", "")
 
 
 def test_user_id_stable_across_relogin(auth_env) -> None:

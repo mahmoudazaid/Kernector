@@ -16,10 +16,15 @@ export const RUNTIME_SETTINGS_STORAGE_KEY = "kernector:runtime-settings:v1";
 
 /**
  * Signed-in generation knobs only (#182). Independent of the anonymous
- * provider/model pair in ``RUNTIME_SETTINGS_STORAGE_KEY``.
+ * provider/model pair in ``RUNTIME_SETTINGS_STORAGE_KEY``. Scoped per user.
  */
-export const GENERATION_SETTINGS_STORAGE_KEY =
+export const GENERATION_SETTINGS_STORAGE_KEY_PREFIX =
   "kernector:generation-settings:v1";
+
+/** Per-account generation settings key (#182 personalisation). */
+export function generationSettingsStorageKey(userId: string): string {
+  return `${GENERATION_SETTINGS_STORAGE_KEY_PREFIX}:${userId}`;
+}
 
 /**
  * Legacy single-transcript key from #235. Read once by
@@ -107,9 +112,11 @@ function isSettingsMap(value: unknown): value is Record<string, number> {
 }
 
 /** Load signed-in generation knobs, or ``null`` when absent/invalid. */
-export function loadGenerationSettings(): Record<string, number> | null {
+export function loadGenerationSettings(
+  userId: string,
+): Record<string, number> | null {
   try {
-    const raw = localStorage.getItem(GENERATION_SETTINGS_STORAGE_KEY);
+    const raw = localStorage.getItem(generationSettingsStorageKey(userId));
     if (!raw) {
       return null;
     }
@@ -121,10 +128,13 @@ export function loadGenerationSettings(): Record<string, number> | null {
 }
 
 /** Persist signed-in generation knobs without touching anonymous provider/model. */
-export function saveGenerationSettings(settings: Record<string, number>): void {
+export function saveGenerationSettings(
+  userId: string,
+  settings: Record<string, number>,
+): void {
   try {
     localStorage.setItem(
-      GENERATION_SETTINGS_STORAGE_KEY,
+      generationSettingsStorageKey(userId),
       JSON.stringify(settings),
     );
   } catch {

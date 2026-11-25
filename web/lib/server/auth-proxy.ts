@@ -65,6 +65,21 @@ export function redactAuthSecrets(text: string): string {
     );
 }
 
+/** Clear HttpOnly session cookie (stale /me or logout 401). */
+export function clearSessionCookieHeader(secure: boolean): string {
+  const parts = [
+    `${AUTH_COOKIE_NAME}=`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    "Max-Age=0",
+  ];
+  if (secure) {
+    parts.push("Secure");
+  }
+  return parts.join("; ");
+}
+
 export async function proxyAuthApi(
   request: Request,
   path: string,
@@ -125,6 +140,13 @@ export async function proxyAuthApi(
   }
 
   const status = upstream.status;
+  // Stale cookies must be cleared so middleware/AuthGate cannot lock /login.
+  if (
+    status === 401 &&
+    (path === "/api/v1/auth/me" || path === "/api/v1/auth/logout")
+  ) {
+    outHeaders.append("Set-Cookie", clearSessionCookieHeader(secure));
+  }
   // 204/205/304 must not carry a body — even an empty ArrayBuffer throws.
   const nullBody = status === 204 || status === 205 || status === 304;
   const body = nullBody ? null : await upstream.arrayBuffer();

@@ -65,9 +65,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setAuthPreferences(null, { generation, status: "ready" });
       }
     } catch {
-      // Non-401 /me failures must not reject unhandled on every page.
+      // Non-401 /me failures are not "signed out" — AuthGate shows Retry.
       if (getAuthSession().generation === generation) {
-        setPreferencesStatus("ready");
+        setPreferencesStatus("unavailable");
       }
     }
   }, []);

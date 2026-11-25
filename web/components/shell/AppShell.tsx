@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { Suspense, useState, type ReactNode } from "react";
+import { AuthGate } from "@/components/auth/AuthGate";
+import { LoadingState } from "@/components/states/LoadingState";
 import { PRODUCT_LABEL } from "@/lib/navigation";
 import { KernectorMark } from "@/components/shell/KernectorMark";
 import { SidebarNav } from "@/components/shell/SidebarNav";
@@ -72,7 +74,21 @@ export function AppShell({ children }: AppShellProps) {
         {showWorkspaceNav ? (
           <SidebarNav open={navOpen} onNavigate={() => setNavOpen(false)} />
         ) : null}
-        <main className="kern-main">{children}</main>
+        <main className="kern-main">
+          {auth === null ? (
+            children
+          ) : (
+            <Suspense
+              fallback={
+                <div className="kern-content-state" aria-busy="true">
+                  <LoadingState label="Loading" />
+                </div>
+              }
+            >
+              <AuthGate>{children}</AuthGate>
+            </Suspense>
+          )}
+        </main>
       </div>
     </div>
   );

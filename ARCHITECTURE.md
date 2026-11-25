@@ -140,8 +140,11 @@ Local end-user auth (#182 / [ADR 0013](docs/adr/0013-local-user-auth-and-prefere
 uses an HttpOnly `kernector_session` cookie via the same-origin Next BFF
 (`/api/v1/auth/*`, `/api/v1/me/preferences`). CSRF is re-derived from the
 session id and a server-only key. Preferred provider/model for signed-in users
-live in SQLite preferences; anonymous users keep `kernector:runtime-settings:v1`.
-Chat and documents stay ungated. Workspace membership remains #446.
+live in SQLite preferences; generation knobs use a per-user client key.
+The Next.js Hub gates every product route on a signed-in session (middleware
+cookie check plus client `AuthGate` after `GET /me`). That gate is
+browser-side only: FastAPI product routes still answer anonymous requests.
+Workspace membership remains #446.
 
 ## Knowledge foundation
 

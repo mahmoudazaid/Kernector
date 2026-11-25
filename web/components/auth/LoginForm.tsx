@@ -5,17 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { KernectorMark } from "@/components/shell/KernectorMark";
 import { ApiError } from "@/lib/api/errors";
+import { safeNextPath } from "@/lib/auth/safe-next-path";
 import { useAuth } from "@/lib/auth/use-auth";
-
-function safeNextPath(raw: string | null): string {
-  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) {
-    return "/";
-  }
-  if (raw === "/login" || raw.startsWith("/login?")) {
-    return "/";
-  }
-  return raw;
-}
 
 export function LoginForm() {
   const { signIn } = useAuth();
@@ -32,7 +23,9 @@ export function LoginForm() {
     setError(null);
     try {
       await signIn(username, password);
-      router.replace(safeNextPath(searchParams.get("next")));
+      router.replace(
+        safeNextPath(searchParams.get("next"), window.location.origin),
+      );
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         setError("Invalid username or password");

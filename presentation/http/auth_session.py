@@ -45,6 +45,20 @@ def clear_session_cookie(
     )
 
 
+def session_cookie_clear_header(*, cookie_name: str, secure: bool) -> str:
+    """``Set-Cookie`` value that clears the session (for HTTPException headers)."""
+    parts = [
+        f"{cookie_name}=",
+        "Path=/",
+        "HttpOnly",
+        "SameSite=lax",
+        "Max-Age=0",
+    ]
+    if secure:
+        parts.append("Secure")
+    return "; ".join(parts)
+
+
 def request_wants_secure_cookie(request: Request) -> bool:
     """HTTPS determination for cookie Secure (direct API; BFF may override)."""
     forwarded = request.headers.get("x-forwarded-proto", "").split(",")[0].strip()
