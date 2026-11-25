@@ -831,7 +831,7 @@ class SqlRelationshipStore:
         keep = connection.execute(
             """
             SELECT verification, decision_actor, decision_at, first_seen_at,
-                   decision_version
+                   decision_version, origin, confidence, last_verified_at
             FROM relationships
             WHERE workspace_id = ? AND relationship_id = ?
             """,
@@ -840,7 +840,7 @@ class SqlRelationshipStore:
         drop = connection.execute(
             """
             SELECT verification, decision_actor, decision_at, first_seen_at,
-                   decision_version
+                   decision_version, origin, confidence, last_verified_at
             FROM relationships
             WHERE workspace_id = ? AND relationship_id = ?
             """,
@@ -848,6 +848,9 @@ class SqlRelationshipStore:
         ).fetchone()
         if keep is not None and drop is not None:
             # Preserve human rejection/confirmation and the earliest first_seen_at.
+            # Copy origin/confidence/last_verified_at with verification so a
+            # verified provider_declared row cannot leave inferred+verified
+            # without a decision on the survivor.
             drop_rank = _verification_priority(drop["verification"])
             keep_rank = _verification_priority(keep["verification"])
             if drop_rank > keep_rank or (
@@ -859,7 +862,8 @@ class SqlRelationshipStore:
                     """
                     UPDATE relationships
                     SET verification = ?, decision_actor = ?, decision_at = ?,
-                        decision_version = ?
+                        decision_version = ?, origin = ?, confidence = ?,
+                        last_verified_at = ?
                     WHERE workspace_id = ? AND relationship_id = ?
                     """,
                     (
@@ -871,6 +875,9 @@ class SqlRelationshipStore:
                             int(drop["decision_version"]),
                         )
                         + 1,
+                        drop["origin"],
+                        drop["confidence"],
+                        drop["last_verified_at"],
                         self._workspace_id,
                         keep_id,
                     ),

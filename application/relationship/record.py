@@ -307,11 +307,13 @@ class RecordExplicitRelationships:
                     continue
                 # Rewrite only — do not re-run create-time Relationship checks
                 # (confirmed inferred edges must keep their decision fields).
+                # Keep the edge's own freshness; target arrival does not revive
+                # stale/removed evidence (ADR 0011 decision 4).
                 self._store.resolve_endpoints(
                     edge.relationship_id,
                     subject=subject,
                     object=obj,
-                    freshness=FRESHNESS_CURRENT,
+                    freshness=edge.freshness,
                 )
 
     def _upgrade_endpoint(

@@ -296,7 +296,8 @@ def test_merge_retains_newest_evidence_by_recorded_at(
 ) -> None:
     # Two rows for the same logical edge (unresolved vs resolved). Merging via
     # resolve_endpoints exercises _retain_newest_evidence_per_source without the
-    # upsert path's same-source DELETE.
+    # upsert path's same-source DELETE. Older rev is "9", newer recorded is "10"
+    # so text comparison would prefer the wrong row.
     unresolved = store.upsert_from_evidence(
         project_id="prj_orders",
         subject=_ref("inst/PROJ:PROJ-140"),
@@ -306,7 +307,7 @@ def test_merge_retains_newest_evidence_by_recorded_at(
         verification=VERIFICATION_VERIFIED,
         confidence=1.0,
         freshness="current",
-        evidence=_evidence(revision="10"),
+        evidence=_evidence(revision="9"),
         seen_at="2026-10-01T12:00:00Z",
     )
     store.upsert_from_evidence(
@@ -320,12 +321,11 @@ def test_merge_retains_newest_evidence_by_recorded_at(
         freshness="current",
         evidence=_evidence(
             "inst/PROJ:OTHER-1",
-            revision="9",
+            revision="other-1",
             locator="field=issuelinks;type=Tests;dir=in;key=PROJ-140",
         ),
         seen_at="2026-10-02T12:00:00Z",
     )
-    # Same source as unresolved, newer recorded_at, lexicographically smaller rev.
     store.upsert_from_evidence(
         project_id="prj_orders",
         subject=_ref("inst/PROJ:PROJ-140"),
@@ -335,7 +335,7 @@ def test_merge_retains_newest_evidence_by_recorded_at(
         verification=VERIFICATION_VERIFIED,
         confidence=1.0,
         freshness="current",
-        evidence=_evidence(revision="9"),
+        evidence=_evidence(revision="10"),
         seen_at="2026-10-03T12:00:00Z",
     )
 
@@ -348,12 +348,60 @@ def test_merge_retains_newest_evidence_by_recorded_at(
 
     loaded = store.get(unresolved.relationship_id)
     assert loaded is not None
-    by_source = {
-        (item.source.source_type, item.source.source_id): item.revision
+    primary_revisions = [
+        item.revision
         for item in loaded.evidence
-    }
-    assert by_source[("jira", "inst/PROJ:PROJ-140")] == "9"
-    assert by_source[("jira", "inst/PROJ:OTHER-1")] == "9"
+        if item.source.source_id == "inst/PROJ:PROJ-140"
+    ]
+    assert primary_revisions == ["10"]
+
+
+def test_merge_copies_origin_with_stronger_verification(
+    store: SqlRelationshipStore,
+) -> None:
+    pending = store.upsert_from_evidence(
+        project_id="prj_orders",
+        subject=_ref("inst/PROJ:PROJ-1"),
+        relation_type="relates_to",
+        object=UnresolvedKey("PROJ-9"),
+        origin=ORIGIN_INFERRED,
+        verification=VERIFICATION_UNVERIFIED,
+        confidence=0.4,
+        freshness="current",
+        evidence=_evidence(
+            "inst/PROJ:PROJ-1",
+            locator="field=model;span=1",
+            revision="r-inferred",
+        ),
+        seen_at="2026-10-01T12:00:00Z",
+    )
+    store.upsert_from_evidence(
+        project_id="prj_orders",
+        subject=_ref("inst/PROJ:PROJ-1"),
+        relation_type="relates_to",
+        object=_ref("inst/PROJ:PROJ-9"),
+        origin=ORIGIN_PROVIDER_DECLARED,
+        verification=VERIFICATION_VERIFIED,
+        confidence=1.0,
+        freshness="current",
+        evidence=_evidence(
+            "inst/PROJ:PROJ-1",
+            locator="field=issuelinks;type=Relates;dir=out;key=PROJ-9",
+            revision="r-provider",
+        ),
+        seen_at="2026-10-02T12:00:00Z",
+    )
+
+    loaded = store.resolve_endpoints(
+        pending.relationship_id,
+        subject=_ref("inst/PROJ:PROJ-1"),
+        object=_ref("inst/PROJ:PROJ-9"),
+        freshness="stale",
+    )
+    assert loaded.origin == ORIGIN_PROVIDER_DECLARED
+    assert loaded.verification == VERIFICATION_VERIFIED
+    assert loaded.confidence == 1.0
+    assert loaded.freshness == "stale"
 
 
 def test_mark_stale_for_evidence_ignores_matching_revision(
