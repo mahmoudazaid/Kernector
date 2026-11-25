@@ -12,10 +12,11 @@ from domain.knowledge import SourceDocument
 from domain.relationship.models import ProviderLink
 
 PROVIDER_LINKS_EXTRA_KEY = "kernector.jira.provider_links.v1"
+LINKS_FINGERPRINT_EXTRA_KEY = "kernector.jira.links_fingerprint.v1"
 EXTRACTOR_ID = "jira_explicit_links"
 _PROVIDER_LINKS_VERSION = 1
 
-_DEFAULT_TYPE_MAP: dict[str, tuple[str, str]] = {
+DEFAULT_TYPE_MAP: dict[str, tuple[str, str]] = {
     # type_name / inward / outward phrase.casefold() -> (canonical, outward_role)
     # role: "subject" means the outward end is the canonical subject.
     "tests": ("tests", "subject"),
@@ -23,9 +24,16 @@ _DEFAULT_TYPE_MAP: dict[str, tuple[str, str]] = {
     "is tested by": ("tests", "object"),
     "relates": ("relates_to", "subject"),
     "blocks": ("blocks", "subject"),
+    "is blocked by": ("blocks", "object"),
     "defect": ("affects", "subject"),
     "causes": ("affects", "subject"),
+    "is caused by": ("affects", "object"),
 }
+
+
+def fingerprint_provider_links(encoded_payload: str) -> str:
+    """Return a stable hash of an encoded provider-links transport blob."""
+    return hashlib.sha256(encoded_payload.encode("utf-8")).hexdigest()
 
 
 def encode_provider_links(payload: Mapping[str, object]) -> str:
@@ -156,7 +164,7 @@ class JiraLinkTypeMapping:
 
     def __post_init__(self) -> None:
         if not self.by_name:
-            mapping = dict(_DEFAULT_TYPE_MAP)
+            mapping = dict(DEFAULT_TYPE_MAP)
         else:
             mapping = {key.casefold(): value for key, value in self.by_name.items()}
         object.__setattr__(self, "by_name", mapping)
@@ -170,21 +178,23 @@ class JiraLinkTypeMapping:
     ) -> tuple[str, str]:
         """Return ``(relation_type, outward_role)`` for a Jira type.
 
-        Matches ``type.name`` first, then outward/inward phrases so Xray-style
-        types named ``Test`` with phrases ``tests`` / ``is tested by`` resolve.
-        Phrase-only hits always use outward_role ``subject`` so direction logic
-        in the extractor stays consistent.
+        Phrases are checked before ``type.name`` so a type named ``Tests`` with
+        outward ``is tested by`` keeps the phrase's role. An outward-phrase hit
+        uses the table role as-is; an inward-phrase hit flips it.
         """
+        if type_outward:
+            found = self.by_name.get(type_outward.casefold())
+            if found is not None:
+                return found
+        if type_inward:
+            found = self.by_name.get(type_inward.casefold())
+            if found is not None:
+                relation_type, role = found
+                flipped = "object" if role == "subject" else "subject"
+                return relation_type, flipped
         found = self.by_name.get(type_name.casefold())
         if found is not None:
             return found
-        for phrase in (type_outward, type_inward):
-            if not phrase:
-                continue
-            found = self.by_name.get(phrase.casefold())
-            if found is not None:
-                relation_type, _role = found
-                return relation_type, "subject"
         return _token_for_unknown(type_name), "subject"
 
 

@@ -289,7 +289,14 @@ class SyncConnectorDocuments:
         retry = getattr(self._artifact_sync, "record_relationships_if_needed", None)
         if not callable(needs) or not callable(retry):
             return
-        if not needs(document.reference, revision=document.revision):
+        links_fingerprint = document.extra.get(
+            "kernector.jira.links_fingerprint.v1"
+        )
+        if not needs(
+            document.reference,
+            revision=document.revision,
+            links_fingerprint=links_fingerprint,
+        ):
             return
         fetched = self._fetch(document, previous)
         if isinstance(fetched, ConnectorSyncOutcome):

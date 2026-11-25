@@ -274,6 +274,9 @@ def test_skips_when_source_has_no_project(
     assert store.list_for_artifact("prj_orders", UnresolvedKey("PROJ-123")) == ()
     assert store.get_record_watermark(source.reference) is None
     assert recorder.needs_retry(source.reference, revision="r1") is False
+    assert recorder.needs_retry(
+        source.reference, revision="r1", links_fingerprint="changed"
+    ) is False
 
 
 def test_records_after_project_association(

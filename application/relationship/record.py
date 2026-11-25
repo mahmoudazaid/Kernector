@@ -7,7 +7,11 @@ import logging
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 
-from application.relationship.transport import TRANSPORT_KEY_PREFIX
+from application.relationship.transport import (
+    LINKS_FINGERPRINT_EXTRA_KEY,
+    PROVIDER_LINKS_EXTRA_KEY,
+    TRANSPORT_KEY_PREFIX,
+)
 from domain.artifact.models import ArtifactRef
 from domain.artifact.ports import ArtifactIndex
 from domain.knowledge import SourceDocument, SourceReference
@@ -30,7 +34,13 @@ _WATERMARK_VERSION = "v1"
 
 
 def links_fingerprint_for(source: SourceDocument) -> str:
-    """Return a stable fingerprint of namespaced transport link payloads."""
+    """Return a stable fingerprint of provider link transport on ``source``."""
+    payload = source.metadata.extra.get(PROVIDER_LINKS_EXTRA_KEY)
+    if isinstance(payload, str) and payload:
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    listed = source.metadata.extra.get(LINKS_FINGERPRINT_EXTRA_KEY)
+    if isinstance(listed, str) and listed:
+        return listed
     parts = [
         f"{key}={value}"
         for key, value in sorted(source.metadata.extra.items())
@@ -93,31 +103,44 @@ class RecordExplicitRelationships:
         )
         return self._store.get_record_watermark(source.reference) != expected
 
-    def needs_retry(self, reference: SourceReference, *, revision: str) -> bool:
-        """Return whether a skipped source should re-attempt relationship recording.
-
-        Compares stored revision and project ids without fetching link payloads.
-        Fingerprint drift is checked in ``needs_record`` after a fetch.
-        """
+    def needs_retry(
+        self,
+        reference: SourceReference,
+        *,
+        revision: str,
+        links_fingerprint: str | None = None,
+    ) -> bool:
+        """Return whether a skipped source should re-attempt relationship recording."""
         if not self.supports(reference):
             return False
         project_ids = self._project_ids_for(reference)
+        if not project_ids:
+            return False
         stored = self._store.get_record_watermark(reference)
         if stored is None:
-            return bool(project_ids)
+            return True
         parsed = parse_record_watermark(stored)
         if parsed is None:
             return True
-        _fingerprint, stored_revision, stored_projects = parsed
+        stored_fingerprint, stored_revision, stored_projects = parsed
         if stored_revision != revision:
             return True
         if stored_projects != tuple(sorted(project_ids)):
+            return True
+        if (
+            links_fingerprint is not None
+            and links_fingerprint != stored_fingerprint
+        ):
             return True
         return False
 
     def missing_watermark(self, reference: SourceReference) -> bool:
         """Return whether no successful relationship record exists yet."""
         return self._store.get_record_watermark(reference) is None
+
+    def clear_watermark(self, reference: SourceReference) -> None:
+        """Drop the watermark so a returning artifact re-records."""
+        self._store.clear_record_watermark(reference)
 
     def supports(self, reference: SourceReference) -> bool:
         """Return whether an extractor is registered for ``reference``."""
@@ -129,62 +152,56 @@ class RecordExplicitRelationships:
         if extractor is None:
             return
         project_ids = self._project_ids_for(source.reference)
-        if not project_ids:
-            # Associating a project later must still be able to record.
-            return
         fingerprint = links_fingerprint_for(source)
-        watermark = encode_record_watermark(fingerprint, revision, project_ids)
-        if self._store.get_record_watermark(source.reference) == watermark:
-            return
-        raw = self._raw_from_document(source)
-        links: tuple[ProviderLink, ...] = ()
-        if raw is not None:
-            links = extractor.extract(source, raw)
         seen_at = self._now()
         instance_prefix = _source_instance_prefix(source.reference.source_id)
-        for project_id in project_ids:
-            for link in links:
-                subject, subject_aliases = self._resolve_endpoint(
-                    link.subject_key,
-                    instance_prefix=instance_prefix,
-                    part_key=link.subject_part_key,
-                )
-                obj, object_aliases = self._resolve_endpoint(
-                    link.object_key,
-                    instance_prefix=instance_prefix,
-                    part_key=link.object_part_key,
-                )
-                evidence = EvidenceRef(
-                    source=source.reference,
-                    revision=revision,
-                    locator=link.locator,
-                    extractor_id=self._extractor_id,
-                )
-                self._store.upsert_from_evidence(
-                    project_id=project_id,
-                    subject=subject,
-                    relation_type=link.relation_type,
-                    object=obj,
-                    origin=ORIGIN_PROVIDER_DECLARED,
-                    verification=VERIFICATION_VERIFIED,
-                    confidence=1.0,
-                    freshness=FRESHNESS_CURRENT,
-                    evidence=evidence,
-                    seen_at=seen_at,
-                    subject_aliases=subject_aliases,
-                    object_aliases=object_aliases,
-                )
-            self._resolve_arriving_artifact(
-                project_id=project_id,
-                source=source,
-                seen_at=seen_at,
-            )
-        self._store.set_record_watermark(source.reference, watermark)
+        if project_ids:
+            watermark = encode_record_watermark(fingerprint, revision, project_ids)
+            if self._store.get_record_watermark(source.reference) != watermark:
+                raw = self._raw_from_document(source)
+                links: tuple[ProviderLink, ...] = ()
+                if raw is not None:
+                    links = extractor.extract(source, raw)
+                for project_id in project_ids:
+                    for link in links:
+                        subject, subject_aliases = self._resolve_endpoint(
+                            link.subject_key,
+                            instance_prefix=instance_prefix,
+                            part_key=link.subject_part_key,
+                        )
+                        obj, object_aliases = self._resolve_endpoint(
+                            link.object_key,
+                            instance_prefix=instance_prefix,
+                            part_key=link.object_part_key,
+                        )
+                        evidence = EvidenceRef(
+                            source=source.reference,
+                            revision=revision,
+                            locator=link.locator,
+                            extractor_id=self._extractor_id,
+                        )
+                        self._store.upsert_from_evidence(
+                            project_id=project_id,
+                            subject=subject,
+                            relation_type=link.relation_type,
+                            object=obj,
+                            origin=ORIGIN_PROVIDER_DECLARED,
+                            verification=VERIFICATION_VERIFIED,
+                            confidence=1.0,
+                            freshness=FRESHNESS_CURRENT,
+                            evidence=evidence,
+                            seen_at=seen_at,
+                            subject_aliases=subject_aliases,
+                            object_aliases=object_aliases,
+                        )
+                self._store.set_record_watermark(source.reference, watermark)
+        # Resolve pending unresolved ends across the workspace even when this
+        # source has no project association of its own.
+        self._resolve_arriving_artifact(source=source, seen_at=seen_at)
 
     def _resolve_arriving_artifact(
         self,
         *,
-        project_id: str,
         source: SourceDocument,
         seen_at: str,
     ) -> None:
@@ -195,11 +212,7 @@ class RecordExplicitRelationships:
         arriving_prefix = _source_instance_prefix(source.reference.source_id)
         ref = ArtifactRef(source.reference)
         for key in descriptor.external_keys:
-            pending = self._store.list_for_artifact(
-                project_id,
-                UnresolvedKey(key),
-                aliases=(key,),
-            )
+            pending = self._store.list_unresolved_for_key(key)
             for edge in pending:
                 evidence = edge.evidence[0]
                 evidence_prefix = _source_instance_prefix(evidence.source.source_id)
@@ -216,7 +229,7 @@ class RecordExplicitRelationships:
                 if subject is edge.subject and obj is edge.object:
                     continue
                 self._store.upsert_from_evidence(
-                    project_id=project_id,
+                    project_id=edge.project_id,
                     subject=subject,
                     relation_type=edge.relation_type,
                     object=obj,
@@ -249,7 +262,7 @@ class RecordExplicitRelationships:
     ) -> tuple[ArtifactRef | UnresolvedKey, tuple[str, ...]]:
         matches = self._index.find_by_key((key,))
         if not matches:
-            return UnresolvedKey(key), (key,)
+            return UnresolvedKey(key, part_key=part_key), (key,)
         if instance_prefix:
             preferred = [
                 item
@@ -257,11 +270,15 @@ class RecordExplicitRelationships:
                 if item.reference.source_id.startswith(instance_prefix)
             ]
             if not preferred:
-                return UnresolvedKey(key), (key,)
+                return UnresolvedKey(key, part_key=part_key), (key,)
             chosen = preferred[0]
         else:
             chosen = matches[0]
-        aliases = tuple(dict.fromkeys((key, *chosen.external_keys)))
+        # Part-targeted links must not alias every operation on the artifact.
+        if part_key is not None:
+            aliases = (key,)
+        else:
+            aliases = tuple(dict.fromkeys((key, *chosen.external_keys)))
         return ArtifactRef(chosen.reference, part_key=part_key), aliases
 
 

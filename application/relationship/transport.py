@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 TRANSPORT_KEY_PREFIX = "kernector."
+PROVIDER_LINKS_EXTRA_KEY = "kernector.jira.provider_links.v1"
+LINKS_FINGERPRINT_EXTRA_KEY = "kernector.jira.links_fingerprint.v1"
 
 
 def strip_transport_extra(extra: Mapping[str, str]) -> dict[str, str]:

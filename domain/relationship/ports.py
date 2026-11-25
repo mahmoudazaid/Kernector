@@ -57,7 +57,7 @@ class RelationshipStore(Protocol):
     def mark_stale_for_evidence(
         self, source_ref: SourceReference, revision: str
     ) -> None:
-        """Mark edges whose evidence cites ``source_ref`` at other revisions stale."""
+        """Mark edges that cite ``source_ref`` with no evidence at ``revision`` stale."""
 
     def list_for_artifact(
         self,
@@ -69,6 +69,14 @@ class RelationshipStore(Protocol):
     ) -> tuple[Relationship, ...]:
         """Return relationships for ``ref`` in ``project_id`` only."""
 
+    def list_unresolved_for_key(
+        self,
+        key: str,
+        *,
+        part_key: str | None = None,
+    ) -> tuple[Relationship, ...]:
+        """Return unresolved edges for ``key`` across every project in the workspace."""
+
     def apply_decision(
         self,
         relationship_id: str,
@@ -76,8 +84,9 @@ class RelationshipStore(Protocol):
         verification: str,
         actor: str,
         at: datetime,
+        expected_version: int,
     ) -> Relationship:
-        """Apply confirm or reject via domain transitions; persist actor and time."""
+        """Apply confirm or reject via compare-and-swap on ``decision_version``."""
 
     def get(self, relationship_id: str) -> Relationship | None:
         """Return a relationship by id, or ``None``."""
@@ -89,6 +98,9 @@ class RelationshipStore(Protocol):
 
     def get_record_watermark(self, reference: SourceReference) -> str | None:
         """Return the last successful links fingerprint, or ``None``."""
+
+    def clear_record_watermark(self, reference: SourceReference) -> None:
+        """Drop the record watermark so a returning artifact re-records."""
 
 
 class ExplicitLinkExtractor(Protocol):

@@ -175,9 +175,12 @@ class UnresolvedKey:
     """An external key not yet bound to an artifact in the index."""
 
     key: str
+    part_key: str | None = None
 
     def __post_init__(self) -> None:
         _require_key(self.key, "key")
+        if self.part_key is not None:
+            _require_key(self.part_key, "part_key")
 
 
 @dataclass(frozen=True, slots=True)
@@ -217,6 +220,7 @@ class Relationship:
     last_verified_at: str | None = None
     decision_actor: str | None = None
     decision_at: str | None = None
+    decision_version: int = 1
 
     def __post_init__(self) -> None:
         _require_identifier(self.relationship_id, "relationship_id")
@@ -258,6 +262,12 @@ class Relationship:
             _require_text(self.decision_actor, "decision_actor")
         if self.decision_at is not None:
             _require_text(self.decision_at, "decision_at")
+        if not isinstance(self.decision_version, int) or isinstance(
+            self.decision_version, bool
+        ):
+            raise RelationshipInputError("decision_version must be an integer")
+        if self.decision_version < 1:
+            raise RelationshipInputError("decision_version must be at least 1")
         if origin in _START_VERIFIED and verification == VERIFICATION_UNVERIFIED:
             raise RelationshipInputError(
                 f"{origin} relationships must start verified, not unverified"

@@ -198,6 +198,56 @@ def test_locator_stable_across_identical_reextracts() -> None:
     assert first[0].relation_type == "relates_to"
 
 
+def test_passive_outward_phrase_keeps_canonical_direction() -> None:
+    extractor = JiraExplicitLinkExtractor()
+    caused_by = _document(
+        "BUG-2",
+        links_payload={
+            "v": 1,
+            "issue_key": "BUG-2",
+            "links": [
+                {
+                    "field": "issuelinks",
+                    "type_name": "Problem/Incident",
+                    "direction": "outward",
+                    "other_key": "STORY-1",
+                    "type_outward": "is caused by",
+                }
+            ],
+        },
+    )
+    tested_by = _document(
+        "STORY-1",
+        links_payload={
+            "v": 1,
+            "issue_key": "STORY-1",
+            "links": [
+                {
+                    "field": "issuelinks",
+                    "type_name": "Tests",
+                    "direction": "outward",
+                    "other_key": "TEST-9",
+                    "type_outward": "is tested by",
+                }
+            ],
+        },
+    )
+
+    caused = extractor.extract(
+        caused_by, decode_provider_links_raw(caused_by.metadata.extra)
+    )
+    tested = extractor.extract(
+        tested_by, decode_provider_links_raw(tested_by.metadata.extra)
+    )
+
+    assert caused[0].relation_type == "affects"
+    assert caused[0].subject_key == "STORY-1"
+    assert caused[0].object_key == "BUG-2"
+    assert tested[0].relation_type == "tests"
+    assert tested[0].subject_key == "TEST-9"
+    assert tested[0].object_key == "STORY-1"
+
+
 def test_xray_test_type_maps_via_name_and_phrases() -> None:
     extractor = JiraExplicitLinkExtractor()
     by_name = _document(

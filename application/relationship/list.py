@@ -97,38 +97,49 @@ class ListArtifactRelationships:
         seen: set[str] = set()
         for descriptor in visible:
             part = _matching_part(descriptor, key)
-            ref = ArtifactRef(
-                descriptor.reference,
-                part_key=part.part_key if part is not None else None,
-            )
-            alias_parts: list[str] = [key, *descriptor.external_keys]
             if part is not None:
-                alias_parts.append(part.part_key)
+                ref = ArtifactRef(descriptor.reference, part_key=part.part_key)
+                alias_parts = [key, part.part_key]
                 if part.operation_id is not None:
                     alias_parts.append(part.operation_id)
-            aliases = tuple(dict.fromkeys(alias_parts))
-            edges = self._store.list_for_artifact(
-                project_id,
-                ref,
-                filters,
-                aliases=aliases,
-            )
-            for edge in edges:
-                if edge.relationship_id in seen:
-                    continue
-                kept_evidence = self._visible_evidence(edge, project_id)
-                if not kept_evidence:
-                    continue
-                seen.add(edge.relationship_id)
-                views.append(
-                    self._to_view(
-                        edge,
-                        listed=ref,
-                        listed_key=key,
-                        evidence=kept_evidence,
-                        contexts_for=self._contexts_for,
-                    )
+                aliases = tuple(dict.fromkeys(alias_parts))
+                edge_groups = (
+                    self._store.list_for_artifact(
+                        project_id, ref, filters, aliases=aliases
+                    ),
+                    # Whole-artifact edges stay reachable when listing by a part.
+                    self._store.list_for_artifact(
+                        project_id,
+                        ArtifactRef(descriptor.reference),
+                        filters,
+                        aliases=(),
+                    ),
                 )
+            else:
+                ref = ArtifactRef(descriptor.reference)
+                aliases = tuple(dict.fromkeys((key, *descriptor.external_keys)))
+                edge_groups = (
+                    self._store.list_for_artifact(
+                        project_id, ref, filters, aliases=aliases
+                    ),
+                )
+            for edges in edge_groups:
+                for edge in edges:
+                    if edge.relationship_id in seen:
+                        continue
+                    kept_evidence = self._visible_evidence(edge, project_id)
+                    if not kept_evidence:
+                        continue
+                    seen.add(edge.relationship_id)
+                    views.append(
+                        self._to_view(
+                            edge,
+                            listed=ref,
+                            listed_key=key,
+                            evidence=kept_evidence,
+                            contexts_for=self._contexts_for,
+                        )
+                    )
         return tuple(views)
 
     def _visible_evidence(
@@ -200,7 +211,7 @@ class ListArtifactRelationships:
                 key=endpoint.key,
                 source_type=None,
                 source_id=None,
-                part_key=None,
+                part_key=endpoint.part_key,
                 contexts=(),
             )
         return RelationshipEndpointView(

@@ -31,9 +31,17 @@ class RelationshipRecorder(Protocol):
 
     def execute(self, source: SourceDocument, *, revision: str) -> None: ...
 
-    def needs_retry(self, reference: SourceReference, *, revision: str) -> bool: ...
+    def needs_retry(
+        self,
+        reference: SourceReference,
+        *,
+        revision: str,
+        links_fingerprint: str | None = None,
+    ) -> bool: ...
 
     def missing_watermark(self, reference: SourceReference) -> bool: ...
+
+    def clear_watermark(self, reference: SourceReference) -> None: ...
 
     def supports(self, reference: SourceReference) -> bool: ...
 
@@ -106,18 +114,28 @@ class SyncArtifactDescriptors:
         self._record_relationships(source, revision=revision)
 
     def needs_relationship_retry(
-        self, reference: SourceReference, *, revision: str
+        self,
+        reference: SourceReference,
+        *,
+        revision: str,
+        links_fingerprint: str | None = None,
     ) -> bool:
         """Return whether a skipped source still needs relationship recording."""
         if self._relationships is None:
             return False
         if not self._relationships.supports(reference):
             return False
-        return self._relationships.needs_retry(reference, revision=revision)
+        return self._relationships.needs_retry(
+            reference,
+            revision=revision,
+            links_fingerprint=links_fingerprint,
+        )
 
     def on_removed(self, reference: SourceReference) -> None:
         """Delete the descriptor when the catalog source is removed."""
         self._index.remove(reference)
+        if self._relationships is not None:
+            self._relationships.clear_watermark(reference)
 
     def _record_relationships(self, source: SourceDocument, *, revision: str) -> None:
         if self._relationships is None:

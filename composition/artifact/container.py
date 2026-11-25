@@ -77,8 +77,12 @@ def remove_artifact_descriptors(
     if not references:
         return
     index = build_artifact_index(settings)
+    from composition.relationship.container import build_relationship_store
+
+    store = build_relationship_store(settings)
     for reference in references:
         index.remove(reference)
+        store.clear_record_watermark(reference)
 
 
 def build_artifact_sync(settings: Settings) -> SyncArtifactDescriptors:

@@ -101,14 +101,13 @@ def test_lists_selected_project_issues_with_stable_identity_and_revision() -> No
     ]
     first = documents[0]
     assert first.file_name == "KAN-1.md"
-    assert first.extra == {
-        "connector_id": "conn-1",
-        "cloud_id": CLOUD_ID,
-        "jira_instance_id": CLOUD_ID,
-        "project_key": "KAN",
-        "issue_key": "KAN-1",
-        "url": "https://acme.atlassian.net/browse/KAN-1",
-    }
+    assert first.extra["connector_id"] == "conn-1"
+    assert first.extra["cloud_id"] == CLOUD_ID
+    assert first.extra["jira_instance_id"] == CLOUD_ID
+    assert first.extra["project_key"] == "KAN"
+    assert first.extra["issue_key"] == "KAN-1"
+    assert first.extra["url"] == "https://acme.atlassian.net/browse/KAN-1"
+    assert "kernector.jira.links_fingerprint.v1" in first.extra
     assert client.search_calls == [('project = "KAN" ORDER BY key ASC', None)]
 
 
@@ -523,13 +522,13 @@ def test_data_center_documents_use_the_server_id_without_cloud_metadata() -> Non
     source = connector.fetch_document(document)
 
     assert document.source_id == f"{SERVER_ID}/KAN:KAN-1"
-    assert document.extra == {
-        "connector_id": "conn-dc",
-        "jira_instance_id": SERVER_ID,
-        "project_key": "KAN",
-        "issue_key": "KAN-1",
-        "url": "https://jira.example.com/jira/browse/KAN-1",
-    }
+    assert document.extra["connector_id"] == "conn-dc"
+    assert document.extra["jira_instance_id"] == SERVER_ID
+    assert document.extra["project_key"] == "KAN"
+    assert document.extra["issue_key"] == "KAN-1"
+    assert document.extra["url"] == "https://jira.example.com/jira/browse/KAN-1"
+    assert "kernector.jira.links_fingerprint.v1" in document.extra
+    assert "cloud_id" not in document.extra
     assert "cloud_id" not in source.metadata.extra
     assert source.metadata.extra["jira_instance_id"] == SERVER_ID
     assert source.metadata.extra["jira_issue_url"] == "https://jira.example.com/jira/browse/KAN-1"

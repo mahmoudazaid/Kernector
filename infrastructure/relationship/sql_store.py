@@ -38,7 +38,8 @@ def new_relationship_id() -> str:
 def endpoint_token(endpoint: ArtifactRef | UnresolvedKey) -> str:
     """Stable identity token for an edge endpoint."""
     if isinstance(endpoint, UnresolvedKey):
-        return f"u:{endpoint.key}"
+        part = endpoint.part_key or ""
+        return f"u:{endpoint.key}\n{part}"
     part = endpoint.part_key or ""
     return (
         f"r:{endpoint.reference.source_type}\n"
@@ -46,9 +47,9 @@ def endpoint_token(endpoint: ArtifactRef | UnresolvedKey) -> str:
     )
 
 
-def unresolved_token(key: str) -> str:
+def unresolved_token(key: str, *, part_key: str | None = None) -> str:
     """Identity token for an unresolved external key."""
-    return f"u:{key}"
+    return f"u:{key}\n{part_key or ''}"
 
 
 def _endpoint_columns(
@@ -59,7 +60,7 @@ def _endpoint_columns(
             f"{prefix}_kind": _KIND_UNRESOLVED,
             f"{prefix}_source_type": None,
             f"{prefix}_source_id": None,
-            f"{prefix}_part_key": None,
+            f"{prefix}_part_key": endpoint.part_key,
             f"{prefix}_unresolved_key": endpoint.key,
         }
     return {
@@ -74,7 +75,10 @@ def _endpoint_columns(
 def _endpoint_from_row(row: sqlite3.Row, prefix: str) -> ArtifactRef | UnresolvedKey:
     kind = row[f"{prefix}_kind"]
     if kind == _KIND_UNRESOLVED:
-        return UnresolvedKey(row[f"{prefix}_unresolved_key"])
+        return UnresolvedKey(
+            row[f"{prefix}_unresolved_key"],
+            part_key=row[f"{prefix}_part_key"],
+        )
     return ArtifactRef(
         SourceReference(row[f"{prefix}_source_id"], row[f"{prefix}_source_type"]),
         part_key=row[f"{prefix}_part_key"],
@@ -91,12 +95,25 @@ def _prefer_resolved(
     return incoming
 
 
+def _verification_priority(verification: str) -> int:
+    """Higher means a stronger human decision that should survive merges."""
+    if verification == VERIFICATION_REJECTED:
+        return 2
+    if verification == VERIFICATION_VERIFIED:
+        return 1
+    return 0
+
+
 def _pick_merge_survivor(matches: Sequence[sqlite3.Row]) -> sqlite3.Row:
-    """Prefer rejected edges, then earliest first_seen_at, then stable id."""
+    """Prefer rejected, then confirmed, then earliest first_seen_at, then id."""
 
     def rank(row: sqlite3.Row) -> tuple[int, str, str]:
-        verification_rank = 0 if row["verification"] == VERIFICATION_REJECTED else 1
-        return (verification_rank, row["first_seen_at"], row["relationship_id"])
+        # Negate priority so min() prefers the strongest decision.
+        return (
+            -_verification_priority(row["verification"]),
+            row["first_seen_at"],
+            row["relationship_id"],
+        )
 
     return min(matches, key=rank)
 
@@ -213,6 +230,25 @@ class SqlRelationshipStore:
                     )
                 relationship_id = keep_id
 
+            # Replace superseded evidence from this source so freshness stays
+            # current when every remaining row matches the latest revision.
+            connection.execute(
+                """
+                DELETE FROM relationship_evidence
+                WHERE workspace_id = ?
+                  AND relationship_id = ?
+                  AND source_type = ?
+                  AND source_id = ?
+                  AND revision != ?
+                """,
+                (
+                    self._workspace_id,
+                    relationship_id,
+                    evidence.source.source_type,
+                    evidence.source.source_id,
+                    evidence.revision,
+                ),
+            )
             connection.execute(
                 """
                 INSERT OR IGNORE INTO relationship_evidence (
@@ -254,11 +290,13 @@ class SqlRelationshipStore:
                 SET freshness = 'stale'
                 WHERE workspace_id = ?
                   AND relationship_id IN (
-                    SELECT relationship_id FROM relationship_evidence
+                    SELECT relationship_id
+                    FROM relationship_evidence
                     WHERE workspace_id = ?
                       AND source_type = ?
                       AND source_id = ?
-                      AND revision != ?
+                    GROUP BY relationship_id
+                    HAVING SUM(CASE WHEN revision = ? THEN 1 ELSE 0 END) = 0
                   )
                 """,
                 (
@@ -325,6 +363,33 @@ class SqlRelationshipStore:
         finally:
             connection.close()
 
+    def list_unresolved_for_key(
+        self,
+        key: str,
+        *,
+        part_key: str | None = None,
+    ) -> tuple[Relationship, ...]:
+        token = unresolved_token(key, part_key=part_key)
+        connection = _connection.connect(self._path)
+        try:
+            rows = connection.execute(
+                """
+                SELECT * FROM relationships
+                WHERE workspace_id = ?
+                  AND (
+                    subject_token = ?
+                    OR object_token = ?
+                  )
+                ORDER BY project_id COLLATE BINARY, relationship_id COLLATE BINARY
+                """,
+                (self._workspace_id, token, token),
+            ).fetchall()
+            return tuple(
+                self._relationship_from_row(connection, row) for row in rows
+            )
+        finally:
+            connection.close()
+
     def apply_decision(
         self,
         relationship_id: str,
@@ -332,7 +397,12 @@ class SqlRelationshipStore:
         verification: str,
         actor: str,
         at: datetime,
+        expected_version: int,
     ) -> Relationship:
+        if not isinstance(expected_version, int) or isinstance(expected_version, bool):
+            raise RelationshipInputError("expected_version must be an integer")
+        if expected_version < 1:
+            raise RelationshipInputError("expected_version must be at least 1")
         connection = _connection.connect(self._path)
         try:
             connection.execute("BEGIN IMMEDIATE")
@@ -348,7 +418,10 @@ class SqlRelationshipStore:
                     f"relationship not found: {relationship_id}"
                 )
             current = self._relationship_from_row(connection, row)
-            expected_version = int(row["decision_version"])
+            if int(row["decision_version"]) != expected_version:
+                raise RelationshipInputError(
+                    "relationship decision conflict: concurrent update"
+                )
             if verification == VERIFICATION_VERIFIED:
                 updated = current.confirm(actor=actor, at=at)
             elif verification == VERIFICATION_REJECTED:
@@ -455,6 +528,29 @@ class SqlRelationshipStore:
                 ),
             ).fetchone()
             return None if row is None else str(row["links_fingerprint"])
+        finally:
+            connection.close()
+
+    def clear_record_watermark(self, reference: SourceReference) -> None:
+        """Drop the record watermark so a returning artifact re-records."""
+        connection = _connection.connect(self._path)
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                """
+                DELETE FROM relationship_record_watermarks
+                WHERE workspace_id = ? AND source_type = ? AND source_id = ?
+                """,
+                (
+                    self._workspace_id,
+                    reference.source_type,
+                    reference.source_id,
+                ),
+            )
+            connection.execute("COMMIT")
+        except Exception:
+            connection.execute("ROLLBACK")
+            raise
         finally:
             connection.close()
 
@@ -673,10 +769,13 @@ class SqlRelationshipStore:
             (self._workspace_id, drop_id),
         ).fetchone()
         if keep is not None and drop is not None:
-            # Preserve human rejection and the earliest first_seen_at.
-            if (
-                drop["verification"] == VERIFICATION_REJECTED
-                and keep["verification"] != VERIFICATION_REJECTED
+            # Preserve human rejection/confirmation and the earliest first_seen_at.
+            drop_rank = _verification_priority(drop["verification"])
+            keep_rank = _verification_priority(keep["verification"])
+            if drop_rank > keep_rank or (
+                drop_rank == keep_rank
+                and keep["decision_actor"] is None
+                and drop["decision_actor"] is not None
             ):
                 connection.execute(
                     """
@@ -694,23 +793,6 @@ class SqlRelationshipStore:
                             int(drop["decision_version"]),
                         )
                         + 1,
-                        self._workspace_id,
-                        keep_id,
-                    ),
-                )
-            elif (
-                keep["decision_actor"] is None
-                and drop["decision_actor"] is not None
-            ):
-                connection.execute(
-                    """
-                    UPDATE relationships
-                    SET decision_actor = ?, decision_at = ?
-                    WHERE workspace_id = ? AND relationship_id = ?
-                    """,
-                    (
-                        drop["decision_actor"],
-                        drop["decision_at"],
                         self._workspace_id,
                         keep_id,
                     ),
@@ -787,4 +869,5 @@ class SqlRelationshipStore:
             last_verified_at=row["last_verified_at"],
             decision_actor=row["decision_actor"],
             decision_at=row["decision_at"],
+            decision_version=int(row["decision_version"]),
         )

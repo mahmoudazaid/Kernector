@@ -709,9 +709,12 @@ build it.
   `relates_to`↔`relates_to`, `affects`↔`affected_by`.
 - **Jira link mapping** (config in
   `infrastructure/connectors/jira/link_extractor.py`, not core literals):
-  `Tests` / `is tested by` → `tests`; `Relates` → `relates_to`; `Blocks` →
-  `blocks`; `Defect` / `causes` → `affects`; parent and sub-task observations
-  → `child_of`; unknown types → `jira:<sanitized_name>`.
+  `Tests` / `Test` / `is tested by` → `tests`; `Relates` → `relates_to`;
+  `Blocks` / `is blocked by` → `blocks`; `Defect` / `causes` /
+  `is caused by` → `affects`; parent and sub-task observations → `child_of`;
+  unknown types → `jira:<sanitized_name>`. The configured `XRAY_LINK_TYPE`
+  is also mapped to `tests`. Phrase matches are preferred over type names so
+  direction stays correct.
 - **Locators.** Each observation uses a stable locator within the same field
   and revision, for example
   `field=issuelinks;type=Tests;dir=out;key=PROJ-123`,
@@ -719,10 +722,13 @@ build it.
 - **Transport.** Jira fetch writes versioned JSON under
   `kernector.jira.provider_links.v1` on `SourceDocument.extra`. Sync strips
   all `kernector.*` keys before ingest, fingerprinting, and chunk metadata;
-  relationship recording uses the unstripped document. Connector
-  `revision` is `{updated}#{links_hash}` so link-only edits re-enter the
-  record path. A per-document watermark makes failed recording retryable
-  after a successful READY ingest without re-embedding.
+  relationship recording uses the unstripped document. Connector `revision`
+  stays the Jira `updated` value so legacy READY rows are not re-embedded;
+  listing puts `kernector.jira.links_fingerprint.v1` on
+  `ConnectorDocument.extra` so link-only edits still re-enter the record
+  path via the skip/retry watermark compare. A per-document watermark makes
+  failed recording retryable after a successful READY ingest without
+  re-embedding.
 - **Reads.** `GET /api/v1/projects/{project_id}/artifacts/{key}/relationships`
   and MCP `core.project_relationships` (default-deny allowlist) return origin,
   verification, freshness, evidence, and each end's contexts. Edges are

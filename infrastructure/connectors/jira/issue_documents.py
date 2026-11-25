@@ -21,9 +21,11 @@ from infrastructure.connectors.jira.errors import (
     JiraPaginationError,
 )
 from infrastructure.connectors.jira.link_extractor import (
+    LINKS_FINGERPRINT_EXTRA_KEY,
     PROVIDER_LINKS_EXTRA_KEY,
     build_provider_links_payload,
     encode_provider_links,
+    fingerprint_provider_links,
 )
 from infrastructure.connectors.jira.site import JiraSite
 
@@ -179,6 +181,10 @@ class JiraIssueDocuments:
             {"cloud_id": site.cloud_id} if self._config.deployment == "cloud" else {}
         )
         updated = _required_text(fields, "updated")
+        links_payload = build_provider_links_payload(issue_key=key, fields=fields)
+        links_fingerprint = fingerprint_provider_links(
+            encode_provider_links(links_payload)
+        )
         return ConnectorDocument(
             reference=SourceReference(source_id, SourceType.JIRA),
             file_name=f"{key}.md",
@@ -190,6 +196,7 @@ class JiraIssueDocuments:
                 "project_key": project_key,
                 "issue_key": key,
                 "url": site.browse_url(key),
+                LINKS_FINGERPRINT_EXTRA_KEY: links_fingerprint,
             },
         )
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 
 from application.relationship.list import ListArtifactRelationships
@@ -12,6 +13,7 @@ from infrastructure.connectors.jira.link_extractor import (
     EXTRACTOR_ID,
     JiraExplicitLinkExtractor,
     JiraLinkTypeMapping,
+    DEFAULT_TYPE_MAP,
     decode_provider_links_raw,
 )
 from infrastructure.config import Settings
@@ -21,7 +23,10 @@ from composition.project.container import (
     build_project_use_cases,
     build_resolve_projects_for_source,
 )
-from packs.software_delivery.relationship.types import RELATION_INVERSE_NAMES
+
+_INVERSE_NAMES_TARGET = (
+    "packs.software_delivery.relationship.types:RELATION_INVERSE_NAMES"
+)
 
 
 def build_relationship_store(settings: Settings) -> SqlRelationshipStore:
@@ -38,9 +43,24 @@ def _jira_raw_from_document(source: SourceDocument) -> dict[str, object] | None:
 
 
 def _jira_link_mapping(settings: Settings) -> JiraLinkTypeMapping:
-    """Build the link-type table; Settings reserved for operator overrides."""
-    del settings
-    return JiraLinkTypeMapping()
+    """Build the link-type table, including the configured Xray link type."""
+    mapping: dict[str, tuple[str, str]] = dict(DEFAULT_TYPE_MAP)
+    link_type = settings.xray.link_type.strip()
+    if link_type:
+        mapping[link_type.casefold()] = ("tests", "subject")
+    return JiraLinkTypeMapping(by_name=mapping)
+
+
+def _load_inverse_names(settings: Settings) -> Mapping[str, str]:
+    """Load pack inverse names only when the pack is enabled (lazy import)."""
+    if "software-delivery" not in settings.domain_tools.enabled_packs:
+        return {}
+    import importlib
+
+    module_name, _, attr = _INVERSE_NAMES_TARGET.partition(":")
+    module = importlib.import_module(module_name)
+    loaded = getattr(module, attr)
+    return dict(loaded)
 
 
 def build_record_explicit_relationships(
@@ -77,5 +97,5 @@ def build_list_artifact_relationships(
         build_artifact_index(settings),
         project_exists=project_exists,
         project_ids_for=resolve.execute,
-        inverse_names=RELATION_INVERSE_NAMES,
+        inverse_names=_load_inverse_names(settings),
     )
