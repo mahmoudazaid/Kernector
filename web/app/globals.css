@@ -262,7 +262,9 @@ a {
 .kern-nav-auth {
   display: grid;
   gap: var(--kern-space-1);
-  margin-top: var(--kern-space-2);
+  margin-top: auto;
+  padding-top: var(--kern-space-4);
+  flex-shrink: 0;
 }
 
 .kern-nav-user {
@@ -315,8 +317,12 @@ a {
   height: 3rem;
 }
 
-.kern-login .kern-page-heading {
+.kern-login-title {
+  margin: 0;
   text-align: center;
+  font-size: var(--kern-text-xl);
+  font-weight: 500;
+  letter-spacing: -0.02em;
 }
 
 .kern-login-form {
@@ -349,6 +355,24 @@ a {
   padding: var(--kern-space-6) var(--kern-space-7) var(--kern-space-4);
   overflow-x: hidden;
   overflow-y: auto;
+}
+
+/* Page-level waits fill the gray main pane and center the brand loader
+   (same recipe as Knowledge Hub — ADR 0003 §10). */
+.kern-main > [aria-busy="true"] {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: none;
+  min-height: 0;
+}
+
+.kern-main > [aria-busy="true"] > .kern-content-state,
+.kern-main > .kern-content-state {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
 }
 
 .kern-breadcrumb {
@@ -407,7 +431,9 @@ a {
   display: grid;
   flex: 1;
   place-items: center;
-  min-height: 330px;
+  align-content: center;
+  width: 100%;
+  min-height: 0;
   padding: var(--kern-space-7) var(--kern-space-4);
 }
 

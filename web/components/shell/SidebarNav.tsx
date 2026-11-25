@@ -56,13 +56,7 @@ export function SidebarNav({ open, onNavigate }: SidebarNavProps) {
           );
         })}
         {auth?.user ? (
-          <div className="kern-nav-auth">
-            <span
-              className="kern-nav-item kern-nav-user"
-              title={auth.user.username}
-            >
-              {auth.user.username}
-            </span>
+          <>
             <button
               type="button"
               className="kern-nav-item"
@@ -76,9 +70,19 @@ export function SidebarNav({ open, onNavigate }: SidebarNavProps) {
                 {signOutError}
               </p>
             ) : null}
-          </div>
+          </>
         ) : null}
       </div>
+      {auth?.user ? (
+        <div className="kern-nav-auth">
+          <span
+            className="kern-nav-item kern-nav-user"
+            title={auth.user.username}
+          >
+            {auth.user.username}
+          </span>
+        </div>
+      ) : null}
     </nav>
   );
 }

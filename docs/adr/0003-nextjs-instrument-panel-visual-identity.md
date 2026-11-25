@@ -160,6 +160,21 @@ inventing a local look.
     `prefers-reduced-motion` (lids hold closed). New routes must use this
     recipe before merge.
 
+    **Main-pane centering (required for page waits)** — A screen-level wait
+    must center the brand loader in the **gray `.kern-main` workspace**,
+    not in a left-aligned or max-width-constrained column. Match Knowledge
+    Hub: the busy root is a direct child of `.kern-main` with
+    `aria-busy="true"` (or a direct `.kern-content-state`), fills the pane
+    (`flex: 1`, `width: 100%`, no decorative `max-width`), and hosts
+    `.kern-content-state` + `LoadingState` so the mark sits in the
+    horizontal and vertical middle of the remaining main area. Settings,
+    MCP Access, and other preference screens must drop their `~40rem`
+    column constraint while busy. Do not pin the loader under a title with
+    only a fixed `min-height` in a narrow column — that reads as top-left
+    in the gray pane. Shared CSS in `web/app/globals.css`
+    (`.kern-main > [aria-busy="true"]`, `.kern-content-state`) owns this
+    layout; new routes reuse it rather than inventing a local center.
+
 11. **Timestamps** — Every visible clock time in `web/` uses
     [`formatTimestamp`](../../web/lib/format/timestamp.ts):
     **`09 Sep 2026, 09:35 AM`** (local wall clock, `DD Mon YYYY, HH:MM AM/PM`,

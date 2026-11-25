@@ -52,14 +52,16 @@ export function LoginForm() {
       <div className="kern-login-brand" aria-hidden="true">
         <KernectorMark className="kern-login-mark" />
       </div>
-      <header className="kern-page-heading">
-        <h1>Sign in</h1>
-        <p>Local account. Create users with the CLI.</p>
-      </header>
+      <h1 id="login-heading" className="kern-login-title">
+        Sign in
+      </h1>
 
-      <form className="kern-login-form" onSubmit={onSubmit}>
-        <fieldset className="kern-settings-fieldset">
-          <legend>Credentials</legend>
+      <form
+        className="kern-login-form"
+        onSubmit={onSubmit}
+        aria-labelledby="login-heading"
+      >
+        <div className="kern-settings-fieldset">
           <div className="kern-settings-stack">
             <div className="kern-settings-field">
               <label htmlFor="login-username">Username</label>
@@ -89,7 +91,7 @@ export function LoginForm() {
               />
             </div>
           </div>
-        </fieldset>
+        </div>
 
         {error ? (
           <p className="kern-login-error" role="alert">

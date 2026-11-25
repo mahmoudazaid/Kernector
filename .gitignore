@@ -50,6 +50,7 @@ data/chroma/
 data/catalog/
 data/uploads/
 data/secrets/
+data/auth/
 **/google-oauth-*.json
 **/github-oauth-*.json
 **/jira-oauth-*.json
