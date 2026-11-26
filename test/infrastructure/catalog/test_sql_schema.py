@@ -23,10 +23,10 @@ def test_missing_database_reports_version_zero_without_creating_file(
     assert not path.parent.exists()
 
 
-def test_apply_shipped_migration_advances_to_version_nine(tmp_path: Path) -> None:
+def test_apply_shipped_migration_advances_to_version_ten(tmp_path: Path) -> None:
     path = tmp_path / "catalog.sqlite"
     apply_migrations(path)
-    assert current_schema_version(path) == 9
+    assert current_schema_version(path) == 11
     assert path.is_file()
 
 
@@ -89,7 +89,7 @@ def test_legacy_uploaded_at_backfills_created_and_updated_then_drops_column(
         connection.close()
 
     apply_migrations(path)
-    assert current_schema_version(path) == 9
+    assert current_schema_version(path) == 11
 
     connection = sqlite3.connect(path)
     try:
@@ -226,7 +226,7 @@ def test_concurrent_first_apply_migrations_converge(tmp_path: Path) -> None:
         for future in futures:
             future.result(timeout=15)
 
-    assert current_schema_version(path) == 9
+    assert current_schema_version(path) == 11
     connection = sqlite3.connect(path)
     try:
         recorded_mode = connection.execute("PRAGMA journal_mode").fetchone()[0]
@@ -340,7 +340,7 @@ def test_rows_written_before_fingerprints_read_back_with_null_fingerprints(
         SourceReference("1AbC", SourceType.GOOGLE_DRIVE)
     )
 
-    assert current_schema_version(path) == 9
+    assert current_schema_version(path) == 11
     assert document is not None
     assert document.revision == "41"
     assert document.content_fingerprint is None

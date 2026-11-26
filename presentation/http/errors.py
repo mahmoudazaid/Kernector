@@ -99,6 +99,7 @@ from domain.project.errors import (
     ProjectSlugTakenError,
     SharedScopeConfirmationRequiredError,
 )
+from domain.relationship.errors import ArtifactNotVisibleError
 from presentation.failure_messages import (
     OPERATIONAL_FAILURE_MESSAGE,
     PROVIDER_AUTH_FAILURE_MESSAGE,
@@ -129,6 +130,12 @@ _PROJECT_PROBLEMS: dict[type[Exception], tuple[str, str, int, str]] = {
         "Project not found",
         404,
         "The project was not found in this workspace.",
+    ),
+    ArtifactNotVisibleError: (
+        "artifact_not_found",
+        "Artifact not found",
+        404,
+        "The artifact key is not visible in this project.",
     ),
     AssociationNotFoundError: (
         "association_not_found",

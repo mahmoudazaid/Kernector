@@ -984,6 +984,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/projects/{project_id}/artifacts/{key}/relationships": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Artifact Relationships
+     * @description List evidence-backed relationships for an artifact key in a project.
+     */
+    get: operations["list_artifact_relationships_api_v1_projects__project_id__artifacts__key__relationships_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/projects/{project_id}/sources": {
     parameters: {
       query?: never;
@@ -2594,6 +2614,76 @@ export interface components {
       scope_kind: string;
       /** Scope Value */
       scope_value: string;
+    };
+    /**
+     * RelationshipEndpointResponse
+     * @description One end of a relationship edge.
+     */
+    RelationshipEndpointResponse: {
+      /** Contexts */
+      contexts?: string[];
+      /** Key */
+      key?: string | null;
+      /**
+       * Kind
+       * @enum {string}
+       */
+      kind: "artifact" | "unresolved";
+      /** Part Key */
+      part_key?: string | null;
+      /** Source Id */
+      source_id?: string | null;
+      /** Source Type */
+      source_type?: string | null;
+    };
+    /**
+     * RelationshipEvidenceResponse
+     * @description One evidence observation supporting a relationship.
+     */
+    RelationshipEvidenceResponse: {
+      /** Extractor Id */
+      extractor_id: string;
+      /** Locator */
+      locator: string;
+      /** Revision */
+      revision: string;
+      /** Source Id */
+      source_id: string;
+      /** Source Type */
+      source_type: string;
+    };
+    /**
+     * RelationshipResponse
+     * @description Evidence-backed relationship as seen from a listed artifact.
+     */
+    RelationshipResponse: {
+      /** Confidence */
+      confidence: number;
+      /** Decision Actor */
+      decision_actor?: string | null;
+      /** Decision At */
+      decision_at?: string | null;
+      /**
+       * Direction
+       * @enum {string}
+       */
+      direction: "outward" | "inward";
+      /** Evidence */
+      evidence: components["schemas"]["RelationshipEvidenceResponse"][];
+      /** Freshness */
+      freshness: string;
+      object: components["schemas"]["RelationshipEndpointResponse"];
+      /** Origin */
+      origin: string;
+      /** Project Id */
+      project_id: string;
+      /** Relation Type */
+      relation_type: string;
+      /** Relationship Id */
+      relationship_id: string;
+      subject: components["schemas"]["RelationshipEndpointResponse"];
+      /** Verification */
+      verification: string;
     };
     /**
      * ResponseFeedbackResponse
@@ -6159,6 +6249,60 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ProjectDetailResponse"];
+        };
+      };
+      /** @description Not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  list_artifact_relationships_api_v1_projects__project_id__artifacts__key__relationships_get: {
+    parameters: {
+      query?: {
+        origin?: string | null;
+        verification?: string | null;
+        freshness?: string | null;
+      };
+      header?: never;
+      path: {
+        project_id: string;
+        key: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RelationshipResponse"][];
         };
       };
       /** @description Not found */

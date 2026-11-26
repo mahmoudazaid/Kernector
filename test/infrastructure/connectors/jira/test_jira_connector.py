@@ -101,14 +101,13 @@ def test_lists_selected_project_issues_with_stable_identity_and_revision() -> No
     ]
     first = documents[0]
     assert first.file_name == "KAN-1.md"
-    assert first.extra == {
-        "connector_id": "conn-1",
-        "cloud_id": CLOUD_ID,
-        "jira_instance_id": CLOUD_ID,
-        "project_key": "KAN",
-        "issue_key": "KAN-1",
-        "url": "https://acme.atlassian.net/browse/KAN-1",
-    }
+    assert first.extra["connector_id"] == "conn-1"
+    assert first.extra["cloud_id"] == CLOUD_ID
+    assert first.extra["jira_instance_id"] == CLOUD_ID
+    assert first.extra["project_key"] == "KAN"
+    assert first.extra["issue_key"] == "KAN-1"
+    assert first.extra["url"] == "https://acme.atlassian.net/browse/KAN-1"
+    assert "kernector.links_fingerprint.v1" in first.extra
     assert client.search_calls == [('project = "KAN" ORDER BY key ASC', None)]
 
 
@@ -239,7 +238,20 @@ def test_fetch_renders_issue_markdown_with_provenance() -> None:
     assert source.metadata.title == "KAN-9: Checkout fails"
     assert source.metadata.provider == "jira"
     assert source.metadata.content_format == "markdown"
-    assert source.metadata.extra == {
+    from infrastructure.connectors.jira.link_extractor import (
+        LINKS_FINGERPRINT_EXTRA_KEY,
+        PROVIDER_LINKS_EXTRA_KEY,
+    )
+
+    assert {
+        key: value
+        for key, value in source.metadata.extra.items()
+        if key
+        not in {
+            PROVIDER_LINKS_EXTRA_KEY,
+            LINKS_FINGERPRINT_EXTRA_KEY,
+        }
+    } == {
         "file_name": "KAN-9.md",
         "connector_id": "conn-1",
         "jira_issue_key": "KAN-9",
@@ -250,6 +262,8 @@ def test_fetch_renders_issue_markdown_with_provenance() -> None:
         "jira_site_url": "https://acme.atlassian.net",
         "jira_updated_at": "2026-09-01T10:00:00.000+0000",
     }
+    assert PROVIDER_LINKS_EXTRA_KEY in source.metadata.extra
+    assert LINKS_FINGERPRINT_EXTRA_KEY in source.metadata.extra
     assert source.content == "\n".join(
         [
             "# KAN-9: Checkout fails",
@@ -414,6 +428,8 @@ def test_listing_requests_only_the_mapped_fields() -> None:
         "components",
         "fixVersions",
         "parent",
+        "subtasks",
+        "issuelinks",
         "created",
         "updated",
     }
@@ -514,13 +530,13 @@ def test_data_center_documents_use_the_server_id_without_cloud_metadata() -> Non
     source = connector.fetch_document(document)
 
     assert document.source_id == f"{SERVER_ID}/KAN:KAN-1"
-    assert document.extra == {
-        "connector_id": "conn-dc",
-        "jira_instance_id": SERVER_ID,
-        "project_key": "KAN",
-        "issue_key": "KAN-1",
-        "url": "https://jira.example.com/jira/browse/KAN-1",
-    }
+    assert document.extra["connector_id"] == "conn-dc"
+    assert document.extra["jira_instance_id"] == SERVER_ID
+    assert document.extra["project_key"] == "KAN"
+    assert document.extra["issue_key"] == "KAN-1"
+    assert document.extra["url"] == "https://jira.example.com/jira/browse/KAN-1"
+    assert "kernector.links_fingerprint.v1" in document.extra
+    assert "cloud_id" not in document.extra
     assert "cloud_id" not in source.metadata.extra
     assert source.metadata.extra["jira_instance_id"] == SERVER_ID
     assert source.metadata.extra["jira_issue_url"] == "https://jira.example.com/jira/browse/KAN-1"

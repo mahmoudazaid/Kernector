@@ -20,6 +20,13 @@ from infrastructure.connectors.jira.errors import (
     JiraIssueLimitExceededError,
     JiraPaginationError,
 )
+from infrastructure.connectors.jira.link_extractor import (
+    LINKS_FINGERPRINT_EXTRA_KEY,
+    PROVIDER_LINKS_EXTRA_KEY,
+    build_provider_links_payload,
+    encode_provider_links,
+    fingerprint_provider_links,
+)
 from infrastructure.connectors.jira.site import JiraSite
 
 _MSG_REQUEST_FAILED = "The Jira request failed."
@@ -35,6 +42,8 @@ _ISSUE_FIELDS = (
     "components",
     "fixVersions",
     "parent",
+    "subtasks",
+    "issuelinks",
     "created",
     "updated",
 )
@@ -133,6 +142,8 @@ class JiraIssueDocuments:
         site = self._config.site
         summary = _required_text(fields, "summary")
         issue_type = _name(fields.get("issuetype"))
+        links_payload = build_provider_links_payload(issue_key=key, fields=fields)
+        encoded_links = encode_provider_links(links_payload)
         return SourceDocument(
             SourceMetadata(
                 reference=document.reference,
@@ -149,6 +160,10 @@ class JiraIssueDocuments:
                     "jira_project_key": project_key,
                     "jira_site_url": site.site_url,
                     "jira_updated_at": _required_text(fields, "updated"),
+                    PROVIDER_LINKS_EXTRA_KEY: encoded_links,
+                    LINKS_FINGERPRINT_EXTRA_KEY: fingerprint_provider_links(
+                        encoded_links
+                    ),
                 },
             ),
             self._markdown(project_key, key, fields),
@@ -169,10 +184,15 @@ class JiraIssueDocuments:
         cloud_extra = (
             {"cloud_id": site.cloud_id} if self._config.deployment == "cloud" else {}
         )
+        updated = _required_text(fields, "updated")
+        links_payload = build_provider_links_payload(issue_key=key, fields=fields)
+        links_fingerprint = fingerprint_provider_links(
+            encode_provider_links(links_payload)
+        )
         return ConnectorDocument(
             reference=SourceReference(source_id, SourceType.JIRA),
             file_name=f"{key}.md",
-            revision=_required_text(fields, "updated"),
+            revision=updated,
             extra={
                 **_connector_extra(self._config.connector_id),
                 **cloud_extra,
@@ -180,6 +200,7 @@ class JiraIssueDocuments:
                 "project_key": project_key,
                 "issue_key": key,
                 "url": site.browse_url(key),
+                LINKS_FINGERPRINT_EXTRA_KEY: links_fingerprint,
             },
         )
 

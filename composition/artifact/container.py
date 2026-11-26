@@ -77,8 +77,12 @@ def remove_artifact_descriptors(
     if not references:
         return
     index = build_artifact_index(settings)
+    from composition.relationship.container import build_relationship_store
+
+    store = build_relationship_store(settings)
     for reference in references:
         index.remove(reference)
+        store.clear_record_watermark(reference)
 
 
 def build_artifact_sync(settings: Settings) -> SyncArtifactDescriptors:
@@ -105,6 +109,8 @@ def build_artifact_sync(settings: Settings) -> SyncArtifactDescriptors:
         rules = SOFTWARE_DELIVERY_CONTEXT_RULES
         facts_for = structural_facts_for
 
+    from composition.relationship.container import build_record_explicit_relationships
+
     return SyncArtifactDescriptors(
         build_artifact_extractor(),
         build_artifact_index(settings),
@@ -112,4 +118,5 @@ def build_artifact_sync(settings: Settings) -> SyncArtifactDescriptors:
         rules=rules,
         facts_for=facts_for,
         component_ids_for=component_ids_for,
+        relationships=build_record_explicit_relationships(settings),
     )

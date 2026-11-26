@@ -11,7 +11,7 @@ from application.project.associations import (
 )
 from application.project.projects import CreateProjectRequest
 from domain.project.models import SourceScope
-from presentation.http.deps import ProjectUseCasesDep
+from presentation.http.deps import ListArtifactRelationshipsDep, ProjectUseCasesDep
 from presentation.http.errors import problem_responses
 from presentation.http.schemas import (
     AssociateSourceBody,
@@ -20,9 +20,11 @@ from presentation.http.schemas import (
     ProjectAssociationResponse,
     ProjectDetailResponse,
     ProjectResponse,
+    RelationshipResponse,
     project_association_response,
     project_detail_response,
     project_response,
+    relationship_response,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["projects"])
@@ -125,3 +127,31 @@ def remove_association(
         )
     )
     return Response(status_code=204)
+
+
+@router.get(
+    "/projects/{project_id}/artifacts/{key:path}/relationships",
+    responses=problem_responses(404, 422, 500),
+)
+def list_artifact_relationships(
+    project_id: str,
+    key: str,
+    list_relationships: ListArtifactRelationshipsDep,
+    origin: str | None = Query(default=None),
+    verification: str | None = Query(default=None),
+    freshness: str | None = Query(default=None),
+) -> list[RelationshipResponse]:
+    """List evidence-backed relationships for an artifact key in a project."""
+    filters = {
+        name: value
+        for name, value in (
+            ("origin", origin),
+            ("verification", verification),
+            ("freshness", freshness),
+        )
+        if value is not None
+    }
+    views = list_relationships.execute(
+        project_id, key, filters=filters or None
+    )
+    return [relationship_response(view) for view in views]
