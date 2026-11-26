@@ -198,6 +198,59 @@ def test_locator_stable_across_identical_reextracts() -> None:
     assert first[0].relation_type == "relates_to"
 
 
+def test_inward_phrase_flip_keeps_canonical_direction_from_both_ends() -> None:
+    """Inward-only phrase match flips the table role so both sides agree."""
+    extractor = JiraExplicitLinkExtractor()
+    from_test = _document(
+        "TEST-1",
+        links_payload={
+            "v": 1,
+            "issue_key": "TEST-1",
+            "links": [
+                {
+                    "field": "issuelinks",
+                    "type_name": "CustomVerify",
+                    "direction": "outward",
+                    "other_key": "STORY-1",
+                    "type_outward": "verifies",
+                    "type_inward": "is tested by",
+                }
+            ],
+        },
+    )
+    from_story = _document(
+        "STORY-1",
+        links_payload={
+            "v": 1,
+            "issue_key": "STORY-1",
+            "links": [
+                {
+                    "field": "issuelinks",
+                    "type_name": "CustomVerify",
+                    "direction": "inward",
+                    "other_key": "TEST-1",
+                    "type_outward": "verifies",
+                    "type_inward": "is tested by",
+                }
+            ],
+        },
+    )
+
+    outward = extractor.extract(
+        from_test, decode_provider_links_raw(from_test.metadata.extra)
+    )
+    inward = extractor.extract(
+        from_story, decode_provider_links_raw(from_story.metadata.extra)
+    )
+
+    assert outward[0].relation_type == "tests"
+    assert outward[0].subject_key == "TEST-1"
+    assert outward[0].object_key == "STORY-1"
+    assert inward[0].relation_type == "tests"
+    assert inward[0].subject_key == "TEST-1"
+    assert inward[0].object_key == "STORY-1"
+
+
 def test_passive_outward_phrase_keeps_canonical_direction() -> None:
     extractor = JiraExplicitLinkExtractor()
     caused_by = _document(

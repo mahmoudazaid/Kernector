@@ -384,6 +384,41 @@ def test_keeps_unresolved_when_only_other_instance_matches(
     assert listed[0].object.key == "PROJ-123"
 
 
+def test_resolve_arriving_keeps_stale_freshness_without_merge(
+    index: SqlArtifactIndex, store: SqlRelationshipStore
+) -> None:
+    edge = store.upsert_from_evidence(
+        project_id="prj_orders",
+        subject=ArtifactRef(SourceReference("inst/PROJ:PROJ-140", "jira")),
+        relation_type="relates_to",
+        object=UnresolvedKey("PROJ-9"),
+        origin=ORIGIN_PROVIDER_DECLARED,
+        verification=VERIFICATION_VERIFIED,
+        confidence=1.0,
+        freshness="stale",
+        evidence=EvidenceRef(
+            source=SourceReference("inst/PROJ:PROJ-140", "jira"),
+            revision="r1",
+            locator="field=issuelinks;type=Relates;dir=out;key=PROJ-9",
+            extractor_id="jira_explicit_links",
+        ),
+        seen_at="2026-10-01T12:00:00Z",
+    )
+    index.upsert(_descriptor("inst/PROJ:PROJ-9", "PROJ-9"))
+    recorder = RecordExplicitRelationships(
+        store,
+        index,
+        project_ids_for=lambda _ref: ("prj_orders",),
+        extractors={"jira": _FixedExtractor(())},
+        raw_from_document=_raw,
+    )
+    recorder.resolve_arriving(_source("PROJ-9", "inst/PROJ:PROJ-9"))
+    loaded = store.get(edge.relationship_id)
+    assert loaded is not None
+    assert isinstance(loaded.object, ArtifactRef)
+    assert loaded.freshness == "stale"
+
+
 def test_resolve_arriving_preserves_confirmed_inferred_edge(
     index: SqlArtifactIndex, store: SqlRelationshipStore
 ) -> None:

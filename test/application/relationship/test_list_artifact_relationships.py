@@ -169,6 +169,23 @@ def test_lists_part_and_whole_edges_with_direction(
     )
     store.upsert_from_evidence(
         project_id="prj_orders",
+        subject=ArtifactRef(SourceReference("inst/PROJ:PROJ-140", "jira")),
+        relation_type="tests",
+        object=ArtifactRef(SourceReference("inst/api:openapi.yaml", "github")),
+        origin=ORIGIN_PROVIDER_DECLARED,
+        verification=VERIFICATION_VERIFIED,
+        confidence=1.0,
+        freshness="current",
+        evidence=EvidenceRef(
+            source=SourceReference("inst/PROJ:PROJ-140", "jira"),
+            revision="r1",
+            locator="field=issuelinks;type=Tests;dir=out;key=openapi#whole",
+            extractor_id="jira_explicit_links",
+        ),
+        seen_at="2026-10-01T12:00:00Z",
+    )
+    store.upsert_from_evidence(
+        project_id="prj_orders",
         subject=ArtifactRef(SourceReference("inst/api:openapi.yaml", "github")),
         relation_type="relates_to",
         object=UnresolvedKey("DOC-1"),
@@ -192,18 +209,23 @@ def test_lists_part_and_whole_edges_with_direction(
         inverse_names={"tests": "tested_by", "relates_to": "relates_to"},
     )
 
-    by_part_key = {
-        (view.relation_type, view.direction): view
-        for view in use_case.execute("prj_orders", "GET /orders")
+    by_part_key = use_case.execute("prj_orders", "GET /orders")
+    by_operation_id = use_case.execute("prj_orders", "listOrders")
+    assert {
+        (view.relation_type, view.direction, view.object.part_key)
+        for view in by_part_key
+    } == {
+        ("tested_by", "inward", "GET /orders"),
+        ("tested_by", "inward", None),
+        ("relates_to", "outward", None),
     }
-    by_operation_id = {
-        (view.relation_type, view.direction): view
-        for view in use_case.execute("prj_orders", "listOrders")
+    assert {
+        (view.relation_type, view.direction, view.object.part_key)
+        for view in by_operation_id
+    } == {
+        (view.relation_type, view.direction, view.object.part_key)
+        for view in by_part_key
     }
-    assert set(by_part_key) == {("tested_by", "inward"), ("relates_to", "outward")}
-    assert set(by_operation_id) == set(by_part_key)
-    assert by_part_key[("tested_by", "inward")].object.part_key == "GET /orders"
-    assert by_part_key[("relates_to", "outward")].object.kind == "unresolved"
 
 
 def test_rejects_unknown_project_and_invisible_key(
