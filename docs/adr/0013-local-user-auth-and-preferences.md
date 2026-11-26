@@ -73,6 +73,8 @@ authorization (EPIC #257).
   membership or RBAC.
 - Secrets (passwords, session cookies, CSRF) must be redacted in FastAPI and
   BFF logs/error bodies.
+- The auth SQLite file under `AUTH_SQL_PATH` (default `data/auth/`) is
+  local-only runtime state — never commit it. `data/auth/` is gitignored.
 - OpenAPI and `.env.example` document auth/preferences and auth env knobs.
 
 ## Related docs
