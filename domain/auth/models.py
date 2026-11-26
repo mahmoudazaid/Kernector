@@ -1,8 +1,37 @@
-"""Persisted auth record shapes (#182)."""
+"""Persisted auth record shapes (#182, #446)."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
+
+MembershipStatus = Literal["active", "disabled", "revoked"]
+ProjectGrantStatus = Literal["active", "revoked"]
+MEMBER_ROLE: Literal["member"] = "member"
+
+
+@dataclass(frozen=True, slots=True)
+class WorkspaceMembership:
+    """Principal membership in one workspace.
+
+    ``role`` is an opaque assignment string. Permission evaluation belongs to
+    #456; #446 only stores the value.
+    """
+
+    principal_id: str
+    workspace_id: str
+    role: str
+    status: MembershipStatus
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectGrant:
+    """Explicit project access grant within a workspace membership (#446)."""
+
+    principal_id: str
+    workspace_id: str
+    project_id: str
+    status: ProjectGrantStatus
 
 
 @dataclass(frozen=True, slots=True)

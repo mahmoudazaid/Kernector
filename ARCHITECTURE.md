@@ -143,8 +143,13 @@ session id and a server-only key. Preferred provider/model for signed-in users
 live in SQLite preferences; generation knobs use a per-user client key.
 The Next.js Hub gates every product route on a signed-in session (middleware
 cookie check plus client `AuthGate` after `GET /me`). That gate is
-browser-side only: FastAPI product routes still answer anonymous requests.
-Workspace membership remains #446.
+browser-side only: FastAPI product routes still answer anonymous requests
+until #447 wires trusted callers. Workspace membership and explicit project
+grants live in `auth.sqlite` (#446): `MembershipStore` + `ProjectGrantStore`,
+default-deny `ProjectAccessPolicy` via `build_project_access_policy`, and
+operator bootstrap through `presentation.cli.grant_workspace_access`. Role
+strings are opaque (#456 owns RBAC evaluation). This is single-host SQLite
+only (#271 / #270 for multi-instance).
 
 ## Knowledge foundation
 

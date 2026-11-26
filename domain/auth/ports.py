@@ -1,4 +1,4 @@
-"""Ports for local auth persistence (#182)."""
+"""Ports for local auth persistence (#182, #446)."""
 
 from __future__ import annotations
 
@@ -7,13 +7,69 @@ from typing import Literal, Protocol
 
 from domain.auth.models import (
     LoginAttemptState,
+    ProjectGrant,
     StoredPreferences,
     StoredSession,
     StoredUser,
+    WorkspaceMembership,
 )
 from domain.auth.principal import Principal
 
 ClaimLoginResult = LoginAttemptState | Literal["locked"]
+
+
+class MembershipStore(Protocol):
+    """Persistence for principal-to-workspace membership (#446)."""
+
+    def grant_membership(
+        self, principal_id: str, workspace_id: str
+    ) -> WorkspaceMembership:
+        """Ensure an active membership with opaque ``role="member"``."""
+        ...
+
+    def get_membership(
+        self, principal_id: str, workspace_id: str
+    ) -> WorkspaceMembership | None:
+        """Return the membership row, or ``None`` when absent."""
+        ...
+
+    def list_memberships(self, principal_id: str) -> tuple[WorkspaceMembership, ...]:
+        """Return every membership for *principal_id*."""
+        ...
+
+    def disable_membership(self, principal_id: str, workspace_id: str) -> bool:
+        """Mark membership disabled. Return whether a row was updated."""
+        ...
+
+    def revoke_membership(self, principal_id: str, workspace_id: str) -> bool:
+        """Mark membership revoked. Return whether a row was updated."""
+        ...
+
+
+class ProjectGrantStore(Protocol):
+    """Persistence for explicit project grants (#446).
+
+    Grants are keyed by ``(principal_id, workspace_id, project_id)``. An active
+    workspace membership is required before a grant may be written.
+    """
+
+    def grant_project(
+        self, principal_id: str, workspace_id: str, project_id: str
+    ) -> ProjectGrant:
+        """Ensure an active project grant under an active membership."""
+        ...
+
+    def list_project_grants(
+        self, principal_id: str, workspace_id: str
+    ) -> tuple[ProjectGrant, ...]:
+        """Return project grants for one principal in one workspace."""
+        ...
+
+    def revoke_project_grant(
+        self, principal_id: str, workspace_id: str, project_id: str
+    ) -> bool:
+        """Mark the grant revoked. Return whether a row was updated."""
+        ...
 
 
 class AuthStore(Protocol):
