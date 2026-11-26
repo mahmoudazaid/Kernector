@@ -1,10 +1,17 @@
 "use client";
 
-import { useEffect, useState, startTransition, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  startTransition,
+  type ReactNode,
+} from "react";
 import { LoadingState } from "@/components/states/LoadingState";
 import { Button } from "@/components/ui/Button";
 import { SoftSelect } from "@/components/ui/SoftSelect";
-import { ApiError } from "@/lib/api/errors";
+import { ApiError, isAbortError } from "@/lib/api/errors";
 import {
   getOllamaStatus,
   type GetOllamaStatusOptions,
@@ -15,7 +22,9 @@ import type {
   RuntimeSettingsResponse,
 } from "@/lib/api/settings";
 import {
+  loadGenerationSettings,
   loadRuntimeSettings,
+  saveGenerationSettings,
   saveRuntimeSettings,
   type StoredRuntimeSettings,
 } from "@/lib/settings/runtime-settings-storage";
@@ -23,6 +32,12 @@ import {
   SETTINGS_CATALOG_UNAVAILABLE,
   useRuntimeCatalog,
 } from "@/lib/settings/use-runtime-catalog";
+import { putPreferencesRequest } from "@/lib/api/auth";
+import {
+  getAuthSession,
+  setAuthPreferences,
+  subscribeAuthSession,
+} from "@/lib/auth/session-store";
 
 const PROVIDER_LABELS: Record<string, string> = {
   openrouter: "OpenRouter",
@@ -159,13 +174,24 @@ function defaultsFromCatalog(
   };
 }
 
-function persist(selection: SelectionState): void {
-  saveRuntimeSettings({
-    provider: selection.provider,
-    model: selection.model,
-    settings: selection.settings,
-  });
+function persistLocal(
+  selection: SelectionState,
+  userId: string | null,
+): void {
+  if (userId === null) {
+    saveRuntimeSettings({
+      provider: selection.provider,
+      model: selection.model,
+      settings: selection.settings,
+    });
+    return;
+  }
+  // Signed-in: knobs live in a per-user key; never write provider/model to the
+  // anonymous runtime-settings entry (ADR 0013 §8).
+  saveGenerationSettings(userId, selection.settings);
 }
+
+const PREFS_PUT_DEBOUNCE_MS = 300;
 
 /**
  * Provider/model/settings controls with client-local persistence.
@@ -181,21 +207,151 @@ export function SettingsPanel({
     loading: catalogLoading,
     reload,
   } = useRuntimeCatalog(apiBaseUrl, loadCatalog);
+  const auth = useSyncExternalStore(
+    subscribeAuthSession,
+    getAuthSession,
+    getAuthSession,
+  );
   const [selection, setSelection] = useState<SelectionState | null>(null);
   const [selectionForCatalog, setSelectionForCatalog] =
     useState<RuntimeSettingsResponse | null>(null);
+  // Key seed on user id (including null), not generation — refresh signs in
+  // without bumping generation.
+  const [seededForUserId, setSeededForUserId] = useState<
+    string | null | undefined
+  >(undefined);
+  const [prefsError, setPrefsError] = useState<string | null>(null);
   const [probeOutcome, setProbeOutcome] = useState<ProbeOutcome>({
     kind: "idle",
   });
   const [probeLoading, setProbeLoading] = useState(false);
   const [probeNonce, setProbeNonce] = useState(0);
+  const putAbortRef = useRef<AbortController | null>(null);
+  const putTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const putChainRef = useRef<Promise<void>>(Promise.resolve());
+  const pendingOllamaPutRef = useRef(false);
+  const selectionRef = useRef<SelectionState | null>(null);
+  const latestPutRef = useRef<{
+    provider: string;
+    model: string;
+    csrf: string;
+    generation: number;
+  } | null>(null);
 
-  if (catalog !== selectionForCatalog) {
+  const authUserKey = auth.user?.user_id ?? null;
+  selectionRef.current = selection;
+  // Wait until /me (+ prefs) settles so catalog-first hard loads reseed correctly.
+  const prefsReady = auth.preferencesStatus === "ready";
+  const needsReseed =
+    catalog !== null &&
+    prefsReady &&
+    (catalog !== selectionForCatalog || seededForUserId !== authUserKey);
+
+  function queuePreferencesPut(
+    provider: string,
+    model: string,
+    options: { debounceMs?: number } = {},
+  ): void {
+    const session = getAuthSession();
+    if (session.user === null || !session.csrfToken || !model.trim()) {
+      return;
+    }
+    const csrf = session.csrfToken;
+    const generation = session.generation;
+    const debounceMs = options.debounceMs ?? 0;
+    latestPutRef.current = { provider, model, csrf, generation };
+
+    if (putTimerRef.current) {
+      clearTimeout(putTimerRef.current);
+      putTimerRef.current = null;
+    }
+
+    const run = () => {
+      putAbortRef.current?.abort();
+      const controller = new AbortController();
+      putAbortRef.current = controller;
+      setPrefsError(null);
+      putChainRef.current = putChainRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          if (controller.signal.aborted) {
+            return;
+          }
+          try {
+            const prefs = await putPreferencesRequest(csrf, provider, model, {
+              signal: controller.signal,
+            });
+            if (controller.signal.aborted) {
+              return;
+            }
+            setAuthPreferences(prefs, { generation, status: "ready" });
+            if (
+              latestPutRef.current?.provider === provider &&
+              latestPutRef.current?.model === model
+            ) {
+              latestPutRef.current = null;
+            }
+          } catch (error) {
+            if (controller.signal.aborted || isAbortError(error)) {
+              return;
+            }
+            setPrefsError(
+              "Could not save provider/model preferences. Try again.",
+            );
+          }
+        });
+    };
+
+    if (debounceMs > 0) {
+      putTimerRef.current = setTimeout(run, debounceMs);
+    } else {
+      run();
+    }
+  }
+
+  if (needsReseed) {
     if (catalog) {
-      const next = defaultsFromCatalog(catalog, loadRuntimeSettings());
+      const authPrefs = auth.preferences;
+      const storedLocal = loadRuntimeSettings();
+      const knobs =
+        (authUserKey !== null
+          ? loadGenerationSettings(authUserKey)
+          : null) ??
+        storedLocal?.settings ??
+        {};
+      const seedSource =
+        auth.user !== null
+          ? authPrefs !== null &&
+            authPrefs.usable &&
+            authPrefs.provider !== null &&
+            authPrefs.model !== null
+            ? {
+                provider: authPrefs.provider,
+                model: authPrefs.model,
+                settings: knobs,
+              }
+            : {
+                // Missing/stale: catalog defaults for provider/model, keep knobs.
+                provider: "",
+                model: "",
+                settings: knobs,
+              }
+          : storedLocal;
+      const next = defaultsFromCatalog(
+        catalog,
+        seedSource
+          ? {
+              provider: seedSource.provider ?? "",
+              model: seedSource.model ?? "",
+              settings: seedSource.settings ?? {},
+            }
+          : null,
+      );
       setSelection(next);
       setSelectionForCatalog(catalog);
-      persist(next);
+      setSeededForUserId(authUserKey);
+      // Seed only — never PUT server preferences without a user action.
+      persistLocal(next, authUserKey);
     } else {
       setSelection(null);
       setSelectionForCatalog(null);
@@ -236,16 +392,26 @@ export function SettingsPanel({
             if (!current || current.provider !== "ollama") {
               return current;
             }
+            let next = current;
             if (
               status.reachable &&
               status.models.length > 0 &&
               !status.models.includes(current.model)
             ) {
-              const next = { ...current, model: status.models[0] ?? "" };
-              persist(next);
-              return next;
+              next = { ...current, model: status.models[0] ?? "" };
+              persistLocal(next, getAuthSession().user?.user_id ?? null);
             }
-            return current;
+            // Provider switch to ollama waited for probe; save resolved model.
+            if (
+              pendingOllamaPutRef.current ||
+              next.model !== current.model
+            ) {
+              pendingOllamaPutRef.current = false;
+              if (next.model.trim()) {
+                queuePreferencesPut(next.provider, next.model);
+              }
+            }
+            return next;
           });
         });
       })
@@ -258,9 +424,19 @@ export function SettingsPanel({
           (error.code === "ollama_unconfigured" || error.status === 409)
         ) {
           setProbeOutcome({ kind: "unconfigured" });
-          return;
+        } else {
+          setProbeOutcome({ kind: "error" });
         }
-        setProbeOutcome({ kind: "error" });
+        // Probe failed after an ollama provider switch — save whatever model we have.
+        if (pendingOllamaPutRef.current) {
+          pendingOllamaPutRef.current = false;
+          setSelection((current) => {
+            if (current?.provider === "ollama" && current.model.trim()) {
+              queuePreferencesPut(current.provider, current.model);
+            }
+            return current;
+          });
+        }
       })
       .finally(() => {
         if (active) {
@@ -274,22 +450,88 @@ export function SettingsPanel({
     };
   }, [apiBaseUrl, probeOllama, provider, probeNonce]);
 
-  function updateSelection(patch: Partial<SelectionState>): void {
+  function updateSelection(
+    patch: Partial<SelectionState>,
+    options: { debouncePrefs?: boolean } = {},
+  ): void {
     setSelection((current) => {
       if (!current) {
         return current;
       }
       const next = { ...current, ...patch };
-      persist(next);
+      const userId = getAuthSession().user?.user_id ?? null;
+      persistLocal(next, userId);
+
+      const providerChanged =
+        patch.provider !== undefined && patch.provider !== current.provider;
+      const modelChanged =
+        patch.model !== undefined && patch.model !== current.model;
+
+      if (userId !== null && (providerChanged || modelChanged)) {
+        if (providerChanged && next.provider === "ollama") {
+          // Wait for the probe to resolve a real installed model before PUT.
+          pendingOllamaPutRef.current = true;
+          return next;
+        }
+        if (!next.model.trim()) {
+          return next;
+        }
+        queuePreferencesPut(next.provider, next.model, {
+          debounceMs: options.debouncePrefs ? PREFS_PUT_DEBOUNCE_MS : 0,
+        });
+      }
       return next;
     });
   }
+
+  useEffect(() => {
+    return () => {
+      const hadDebounce = putTimerRef.current !== null;
+      if (putTimerRef.current) {
+        clearTimeout(putTimerRef.current);
+        putTimerRef.current = null;
+      }
+      // Do not abort in-flight PUTs — let them finish; generation guards the store.
+      const session = getAuthSession();
+      const sel = selectionRef.current;
+      let provider: string | undefined;
+      let model: string | undefined;
+      if (
+        pendingOllamaPutRef.current &&
+        sel &&
+        sel.provider === "ollama" &&
+        sel.model.trim()
+      ) {
+        pendingOllamaPutRef.current = false;
+        provider = sel.provider;
+        model = sel.model;
+      } else if (hadDebounce && latestPutRef.current) {
+        provider = latestPutRef.current.provider;
+        model = latestPutRef.current.model;
+      }
+      if (
+        provider &&
+        model &&
+        session.user !== null &&
+        session.csrfToken
+      ) {
+        const csrf = session.csrfToken;
+        const generation = session.generation;
+        latestPutRef.current = null;
+        void putPreferencesRequest(csrf, provider, model)
+          .then((prefs) => {
+            setAuthPreferences(prefs, { generation, status: "ready" });
+          })
+          .catch(() => undefined);
+      }
+    };
+  }, []);
 
   function retryProbe(): void {
     setProbeNonce((nonce) => nonce + 1);
   }
 
-  if (catalogView.kind === "loading") {
+  if (catalogView.kind === "loading" || !prefsReady) {
     return (
       <div className="kern-settings" aria-busy="true">
         <h1>Settings</h1>
@@ -340,6 +582,11 @@ export function SettingsPanel({
         Configure the provider and model used for grounded chat. Selections stay
         in this browser until Chat uses them.
       </p>
+      {prefsError ? (
+        <p className="kern-settings-callout kern-settings-callout--error" role="alert">
+          {prefsError}
+        </p>
+      ) : null}
 
       <fieldset className="kern-settings-fieldset">
         <legend>Provider</legend>
@@ -490,8 +737,16 @@ export function SettingsPanel({
                 type="text"
                 value={selection.model}
                 onChange={(event) =>
-                  updateSelection({ model: event.target.value })
+                  updateSelection(
+                    { model: event.target.value },
+                    { debouncePrefs: true },
+                  )
                 }
+                onBlur={() => {
+                  if (selection.model.trim()) {
+                    queuePreferencesPut(selection.provider, selection.model);
+                  }
+                }}
               />
             </div>
           )}
@@ -516,8 +771,16 @@ export function SettingsPanel({
                   type="text"
                   value={selection.model}
                   onChange={(event) =>
-                    updateSelection({ model: event.target.value })
+                    updateSelection(
+                      { model: event.target.value },
+                      { debouncePrefs: true },
+                    )
                   }
+                  onBlur={() => {
+                    if (selection.model.trim()) {
+                      queuePreferencesPut(selection.provider, selection.model);
+                    }
+                  }}
                 />
               </div>
               <p className="kern-settings-hint">

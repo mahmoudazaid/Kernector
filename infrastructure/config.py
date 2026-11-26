@@ -145,6 +145,19 @@ class HttpAdapterSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class AuthSettings:
+    """Local user auth (#182): SQLite path, session TTL, CSRF key, login lockout."""
+
+    sql_path: Path
+    session_ttl_seconds: int
+    csrf_key: bytes
+    trusted_origins: tuple[str, ...]
+    login_max_failures: int
+    login_lockout_seconds: int
+    cookie_name: str = "kernector_session"
+
+
+@dataclass(frozen=True, slots=True)
 class GoogleDriveSettings:
     """Optional Google Drive connector configuration.
 
@@ -499,6 +512,16 @@ class Settings:
     jira_oauth: JiraOAuthSettings = field(default_factory=JiraOAuthSettings)
     jira_data_center: JiraDataCenterSettings | None = None
     xray: XraySettings = field(default_factory=XraySettings)
+    auth: AuthSettings = field(
+        default_factory=lambda: AuthSettings(
+            sql_path=_PROJECT_ROOT / "data" / "auth" / "auth.sqlite",
+            session_ttl_seconds=60 * 60 * 24 * 7,
+            csrf_key=b"dev-only-change-me-auth-csrf-key!!",
+            trusted_origins=("http://localhost:3000",),
+            login_max_failures=5,
+            login_lockout_seconds=900,
+        )
+    )
 
 def load_settings() -> Settings:
     """Read the environment once. The composition root is the only caller."""
@@ -555,6 +578,7 @@ def load_settings() -> Settings:
         jira_oauth=jira_oauth,
         jira_data_center=jira_data_center,
         xray=_load_xray_settings(jira_data_center),
+        auth=_load_auth_settings(),
     )
 
 
@@ -854,6 +878,39 @@ def require_mcp_settings_from_env() -> McpSettings:
     return McpSettings(
         allowed_hosts=hosts,
         allowed_origins=origins,
+    )
+
+
+def _load_auth_settings() -> AuthSettings:
+    """Parse local auth env vars (#182)."""
+    raw_path = os.getenv("AUTH_SQL_PATH", "data/auth/auth.sqlite")
+    sql_path = _resolve_under_project_root(raw_path)
+    session_ttl = _env_int("AUTH_SESSION_TTL_SECONDS", str(60 * 60 * 24 * 7))
+    if session_ttl <= 0:
+        raise ValueError(f"AUTH_SESSION_TTL_SECONDS must be > 0, got {session_ttl}")
+    csrf_raw = os.getenv("AUTH_CSRF_KEY", "dev-only-change-me-auth-csrf-key!!")
+    if len(csrf_raw.encode("utf-8")) < 16:
+        raise ValueError("AUTH_CSRF_KEY must be at least 16 bytes")
+    trusted = _csv(os.getenv("AUTH_TRUSTED_ORIGINS", "http://localhost:3000"))
+    if not trusted:
+        raise ValueError("AUTH_TRUSTED_ORIGINS must list at least one origin")
+    if "*" in trusted:
+        raise ValueError("AUTH_TRUSTED_ORIGINS must not include '*'")
+    max_failures = _env_int("AUTH_LOGIN_MAX_FAILURES", "5")
+    if max_failures <= 0:
+        raise ValueError(f"AUTH_LOGIN_MAX_FAILURES must be > 0, got {max_failures}")
+    lockout = _env_int("AUTH_LOGIN_LOCKOUT_SECONDS", "900")
+    if lockout <= 0:
+        raise ValueError(f"AUTH_LOGIN_LOCKOUT_SECONDS must be > 0, got {lockout}")
+    # Cookie name is fixed so the Next middleware/BFF stay in sync (ADR 0013).
+    return AuthSettings(
+        sql_path=sql_path,
+        session_ttl_seconds=session_ttl,
+        csrf_key=csrf_raw.encode("utf-8"),
+        trusted_origins=trusted,
+        login_max_failures=max_failures,
+        login_lockout_seconds=lockout,
+        cookie_name="kernector_session",
     )
 
 

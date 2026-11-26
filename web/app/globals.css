@@ -259,6 +259,95 @@ a {
   box-shadow: var(--kern-control-emboss-press);
 }
 
+.kern-nav-auth {
+  display: grid;
+  gap: var(--kern-space-1);
+  margin-top: auto;
+  padding-top: var(--kern-space-4);
+  flex-shrink: 0;
+}
+
+.kern-nav-user {
+  cursor: default;
+  font-size: 0.875rem;
+}
+
+.kern-nav-user:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.kern-nav-error {
+  margin: 0;
+  padding: 0 var(--kern-space-3);
+  color: var(--kern-danger, #b42318);
+  font-size: 0.8125rem;
+}
+
+.kern-app.is-login .kern-body,
+.kern-app.is-no-sidebar .kern-body {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.kern-app.is-login .kern-main,
+.kern-app.is-no-sidebar .kern-main {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.kern-login-page {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.kern-login {
+  display: grid;
+  gap: var(--kern-space-5);
+  width: min(100%, 24rem);
+  padding: var(--kern-space-6) 0;
+}
+
+.kern-login-brand {
+  display: flex;
+  justify-content: center;
+}
+
+.kern-login-mark {
+  width: 3rem;
+  height: 3rem;
+}
+
+.kern-login-title {
+  margin: 0;
+  text-align: center;
+  font-size: var(--kern-text-xl);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.kern-login-form {
+  display: grid;
+  gap: var(--kern-space-4);
+}
+
+.kern-login-form .kern-settings-stack {
+  display: grid;
+  gap: var(--kern-space-4);
+}
+
+.kern-login-form .kern-btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.kern-login-error {
+  margin: 0;
+  color: var(--kern-danger);
+  font-size: var(--kern-text-sm);
+}
+
 .kern-main {
   display: flex;
   flex-direction: column;
@@ -268,6 +357,24 @@ a {
   padding: var(--kern-space-6) var(--kern-space-7) var(--kern-space-4);
   overflow-x: hidden;
   overflow-y: auto;
+}
+
+/* Page-level waits fill the gray main pane and center the brand loader
+   (same recipe as Knowledge Hub — ADR 0003 §10). */
+.kern-main > [aria-busy="true"] {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: none;
+  min-height: 0;
+}
+
+.kern-main > [aria-busy="true"] > .kern-content-state,
+.kern-main > .kern-content-state {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
 }
 
 .kern-breadcrumb {
@@ -326,7 +433,9 @@ a {
   display: grid;
   flex: 1;
   place-items: center;
-  min-height: 330px;
+  align-content: center;
+  width: 100%;
+  min-height: 0;
   padding: var(--kern-space-7) var(--kern-space-4);
 }
 

@@ -5,6 +5,7 @@ export type NavItem = {
 
 export const PRODUCT_LABEL = "Multi-source knowledge hub";
 
+/** Static destinations (auth entry is rendered separately when signed out). */
 export const NAV_ITEMS: readonly NavItem[] = [
   { label: "Dashboard", href: "/" },
   { label: "Knowledge Hub", href: "/documents" },

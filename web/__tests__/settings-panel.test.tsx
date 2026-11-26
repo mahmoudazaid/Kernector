@@ -17,6 +17,7 @@ import {
   createConversation,
   getConversation,
 } from "@/lib/session/conversations";
+import { clearAuthSession } from "@/lib/auth/session-store";
 
 const CATALOG: RuntimeSettingsResponse = {
   providers: ["openrouter", "ollama"],
@@ -76,6 +77,9 @@ const CATALOG: RuntimeSettingsResponse = {
 describe("SettingsPanel", () => {
   beforeEach(() => {
     localStorage.clear();
+    // Boot session is preferencesStatus "loading"; clear so the panel is not
+    // stuck waiting on /me when tests render without AuthProvider.
+    clearAuthSession();
   });
 
   it("shows the brand loader while the catalog is loading", () => {

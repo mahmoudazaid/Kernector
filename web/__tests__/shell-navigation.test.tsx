@@ -3,9 +3,11 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const usePathname = vi.fn(() => "/");
+const useRouter = vi.fn(() => ({ push: vi.fn(), replace: vi.fn() }));
 
 vi.mock("next/navigation", () => ({
   usePathname: () => usePathname(),
+  useRouter: () => useRouter(),
 }));
 
 vi.mock("next/link", () => ({
@@ -121,6 +123,21 @@ describe("shell navigation", () => {
     expect(screen.queryByText(/story intelligence/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/interview/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/software delivery/i)).not.toBeInTheDocument();
+  });
+
+  it("uses a single-column shell when the sidebar is hidden", () => {
+    usePathname.mockReturnValue("/login");
+
+    const { container } = render(
+      <AppShell>
+        <div>content</div>
+      </AppShell>,
+    );
+
+    expect(container.querySelector(".kern-app")).toHaveClass("is-no-sidebar");
+    expect(
+      screen.queryByRole("navigation", { name: /primary navigation/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("toggles the mobile navigation open and closed", async () => {

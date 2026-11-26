@@ -24,7 +24,12 @@ from presentation.http.errors import (
     problem_from_validation_errors,
     register_problem_schemas,
 )
+from presentation.http.redaction import (
+    install_secret_redacting_filter,
+    redact_secrets,
+)
 from presentation.http.routes import admin_mcp as admin_mcp_routes
+from presentation.http.routes import auth as auth_routes
 from presentation.http.routes import chat as chat_routes
 from presentation.http.routes import documents as documents_routes
 from presentation.http.routes import feedback as feedback_routes
@@ -33,6 +38,7 @@ from presentation.http.routes import jira as jira_routes
 from presentation.http.routes import google_drive as google_drive_routes
 from presentation.http.routes import health as health_routes
 from presentation.http.routes import ollama_status as ollama_status_routes
+from presentation.http.routes import preferences as preferences_routes
 from presentation.http.routes import projects as projects_routes
 from presentation.http.routes import settings as settings_routes
 from presentation.http.routes import test_design as test_design_routes
@@ -94,6 +100,7 @@ def create_app(*, cors_origins: Sequence[str] | None = None) -> FastAPI:
             "(app-level; not declared per operation)."
         ),
     )
+    install_secret_redacting_filter(_LOG)
     origins = list(
         cors_origins_from_env() if cors_origins is None else cors_origins
     )
@@ -235,7 +242,12 @@ def create_app(*, cors_origins: Sequence[str] | None = None) -> FastAPI:
 
     @app.exception_handler(ValueError)
     async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse:
-        _LOG.warning("Mapped ValueError on %s", request.url.path, exc_info=exc)
+        _LOG.warning(
+            "Mapped ValueError on %s: %s",
+            request.url.path,
+            redact_secrets(str(exc)),
+            exc_info=exc,
+        )
         problem = problem_from_exception(exc, instance=str(request.url.path))
         return _problem_response(problem)
 
@@ -243,7 +255,12 @@ def create_app(*, cors_origins: Sequence[str] | None = None) -> FastAPI:
     async def runtime_error_handler(
         request: Request, exc: RuntimeError
     ) -> JSONResponse:
-        _LOG.warning("Mapped RuntimeError on %s", request.url.path, exc_info=exc)
+        _LOG.warning(
+            "Mapped RuntimeError on %s: %s",
+            request.url.path,
+            redact_secrets(str(exc)),
+            exc_info=exc,
+        )
         problem = problem_from_exception(exc, instance=str(request.url.path))
         return _problem_response(problem)
 
@@ -251,7 +268,11 @@ def create_app(*, cors_origins: Sequence[str] | None = None) -> FastAPI:
     async def unhandled_exception_handler(
         request: Request, exc: Exception
     ) -> JSONResponse:
-        _LOG.exception("Unhandled exception on %s", request.url.path)
+        _LOG.exception(
+            "Unhandled exception on %s: %s",
+            request.url.path,
+            redact_secrets(str(exc)),
+        )
         problem = problem_from_exception(exc, instance=str(request.url.path))
         return _problem_response(problem)
 
@@ -263,6 +284,8 @@ def create_app(*, cors_origins: Sequence[str] | None = None) -> FastAPI:
     app.include_router(health_routes.router)
     app.include_router(settings_routes.router)
     app.include_router(ollama_status_routes.router)
+    app.include_router(auth_routes.router)
+    app.include_router(preferences_routes.router)
     app.include_router(chat_routes.router)
     app.include_router(feedback_routes.router)
     app.include_router(documents_routes.router)

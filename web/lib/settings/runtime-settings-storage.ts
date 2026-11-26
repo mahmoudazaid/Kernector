@@ -15,6 +15,18 @@
 export const RUNTIME_SETTINGS_STORAGE_KEY = "kernector:runtime-settings:v1";
 
 /**
+ * Signed-in generation knobs only (#182). Independent of the anonymous
+ * provider/model pair in ``RUNTIME_SETTINGS_STORAGE_KEY``. Scoped per user.
+ */
+export const GENERATION_SETTINGS_STORAGE_KEY_PREFIX =
+  "kernector:generation-settings:v1";
+
+/** Per-account generation settings key (#182 personalisation). */
+export function generationSettingsStorageKey(userId: string): string {
+  return `${GENERATION_SETTINGS_STORAGE_KEY_PREFIX}:${userId}`;
+}
+
+/**
  * Legacy single-transcript key from #235. Read once by
  * `migrateLegacyTranscripts()` (#246) into `kernector:conversations:v1` —
  * do not rename without a migration. Do not write this key from new code.
@@ -87,5 +99,45 @@ export function saveRuntimeSettings(value: StoredRuntimeSettings): void {
     localStorage.setItem(RUNTIME_SETTINGS_STORAGE_KEY, JSON.stringify(value));
   } catch {
     // Quota / private mode — ignore; in-memory UI state still works.
+  }
+}
+
+function isSettingsMap(value: unknown): value is Record<string, number> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  return Object.values(value as Record<string, unknown>).every(
+    (entry) => typeof entry === "number" && Number.isFinite(entry),
+  );
+}
+
+/** Load signed-in generation knobs, or ``null`` when absent/invalid. */
+export function loadGenerationSettings(
+  userId: string,
+): Record<string, number> | null {
+  try {
+    const raw = localStorage.getItem(generationSettingsStorageKey(userId));
+    if (!raw) {
+      return null;
+    }
+    const parsed: unknown = JSON.parse(raw);
+    return isSettingsMap(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Persist signed-in generation knobs without touching anonymous provider/model. */
+export function saveGenerationSettings(
+  userId: string,
+  settings: Record<string, number>,
+): void {
+  try {
+    localStorage.setItem(
+      generationSettingsStorageKey(userId),
+      JSON.stringify(settings),
+    );
+  } catch {
+    // Quota / private mode — ignore.
   }
 }

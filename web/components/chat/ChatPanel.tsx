@@ -43,9 +43,11 @@ import {
   type ToolUsed,
 } from "@/lib/chat/turn";
 import {
+  loadGenerationSettings,
   loadRuntimeSettings,
   type StoredChatMessage,
 } from "@/lib/settings/runtime-settings-storage";
+import { getAuthSession } from "@/lib/auth/session-store";
 import { setActiveConversationId } from "@/lib/session/active-session";
 import {
   createConversation,
@@ -948,20 +950,46 @@ export function ChatPanel({
   function runtimeFromSettings(
     style: ConversationResponseStyle,
   ): AskChatOptions["body"]["runtime"] {
+    const auth = getAuthSession();
+    const authPrefs = auth.preferences;
     const stored = loadRuntimeSettings();
-    const provider: "openrouter" | "ollama" | null =
+    const knobs =
+      (auth.user !== null
+        ? loadGenerationSettings(auth.user.user_id)
+        : null) ??
+      stored?.settings ??
+      {};
+    const fromAuth =
+      auth.user !== null &&
+      authPrefs !== null &&
+      authPrefs.usable &&
+      authPrefs.provider !== null &&
+      authPrefs.model !== null &&
+      (authPrefs.provider === "ollama" || authPrefs.provider === "openrouter")
+        ? {
+            provider: authPrefs.provider as "openrouter" | "ollama",
+            model: authPrefs.model,
+            settings: knobs,
+          }
+        : null;
+    // localStorage provider/model is for signed-out users only (ADR 0013 §8).
+    const fromLocal =
+      auth.user === null &&
       stored !== null &&
       (stored.provider === "ollama" || stored.provider === "openrouter")
-        ? stored.provider
-        : null;
-    const base =
-      stored === null
-        ? null
-        : {
-            provider,
+        ? {
+            provider: stored.provider as "openrouter" | "ollama",
             model: stored.model,
             settings: stored.settings,
-          };
+          }
+        : null;
+    // Signed-in with missing/stale pair: catalog defaults for provider/model,
+    // but keep generation knobs (ADR 0013 §8).
+    const signedInKnobsOnly =
+      auth.user !== null && fromAuth === null
+        ? { provider: null, model: null, settings: knobs }
+        : null;
+    const base = fromAuth ?? fromLocal ?? signedInKnobsOnly;
     if (style === "default") {
       return base;
     }

@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useState } from "react";
 import { NAV_ITEMS, isActivePath } from "@/lib/navigation";
+import { useAuthOptional } from "@/lib/auth/use-auth";
 
 type SidebarNavProps = {
   open: boolean;
@@ -11,6 +13,27 @@ type SidebarNavProps = {
 
 export function SidebarNav({ open, onNavigate }: SidebarNavProps) {
   const pathname = usePathname();
+  const router = useRouter();
+  const auth = useAuthOptional();
+  const [signOutError, setSignOutError] = useState<string | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
+
+  async function handleSignOut(): Promise<void> {
+    if (!auth) {
+      return;
+    }
+    setSignOutError(null);
+    setSigningOut(true);
+    try {
+      await auth.signOut();
+      onNavigate?.();
+      router.replace("/login");
+    } catch {
+      setSignOutError("Sign out failed. Please try again.");
+    } finally {
+      setSigningOut(false);
+    }
+  }
 
   return (
     <nav
@@ -32,7 +55,34 @@ export function SidebarNav({ open, onNavigate }: SidebarNavProps) {
             </Link>
           );
         })}
+        {auth?.user ? (
+          <>
+            <button
+              type="button"
+              className="kern-nav-item"
+              disabled={signingOut}
+              onClick={() => void handleSignOut()}
+            >
+              {signingOut ? "Signing out…" : "Sign out"}
+            </button>
+            {signOutError ? (
+              <p className="kern-nav-error" role="alert">
+                {signOutError}
+              </p>
+            ) : null}
+          </>
+        ) : null}
       </div>
+      {auth?.user ? (
+        <div className="kern-nav-auth">
+          <span
+            className="kern-nav-item kern-nav-user"
+            title={auth.user.username}
+          >
+            {auth.user.username}
+          </span>
+        </div>
+      ) : null}
     </nav>
   );
 }

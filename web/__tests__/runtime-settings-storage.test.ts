@@ -11,7 +11,10 @@ import {
 import {
   CHAT_MESSAGES_STORAGE_KEY,
   RUNTIME_SETTINGS_STORAGE_KEY,
+  generationSettingsStorageKey,
+  loadGenerationSettings,
   loadRuntimeSettings,
+  saveGenerationSettings,
   saveRuntimeSettings,
   type StoredRuntimeSettings,
 } from "@/lib/settings/runtime-settings-storage";
@@ -70,5 +73,15 @@ describe("runtime settings storage", () => {
       JSON.stringify({ provider: "openrouter" }),
     );
     expect(loadRuntimeSettings()).toBeNull();
+  });
+
+  it("scopes generation settings per user id", () => {
+    saveGenerationSettings("alice", { temperature: 1.8 });
+    saveGenerationSettings("bob", { temperature: 0.2 });
+
+    expect(loadGenerationSettings("alice")).toEqual({ temperature: 1.8 });
+    expect(loadGenerationSettings("bob")).toEqual({ temperature: 0.2 });
+    expect(localStorage.getItem(generationSettingsStorageKey("alice"))).toBeTruthy();
+    expect(localStorage.getItem("kernector:generation-settings:v1")).toBeNull();
   });
 });
