@@ -12,6 +12,7 @@ from domain.artifact.models import ArtifactRef
 from domain.knowledge import SourceReference
 from domain.relationship.errors import RelationshipInputError
 from domain.relationship.models import (
+    FRESHNESS_CURRENT,
     VERIFICATION_REJECTED,
     VERIFICATION_VERIFIED,
     EvidenceRef,
@@ -761,7 +762,7 @@ class SqlRelationshipStore:
         new_object = endpoint_token(object)
         conflict = connection.execute(
             """
-            SELECT relationship_id FROM relationships
+            SELECT relationship_id, freshness FROM relationships
             WHERE workspace_id = ?
               AND project_id = ?
               AND relation_type = ?
@@ -778,12 +779,16 @@ class SqlRelationshipStore:
                 relationship_id,
             ),
         ).fetchone()
+        effective_freshness = freshness
         if conflict is not None:
             self._merge_into(
                 connection,
                 keep_id=relationship_id,
                 drop_id=conflict["relationship_id"],
             )
+            # Prefer current when either merged row is current (ADR 0011).
+            if FRESHNESS_CURRENT in (freshness, conflict["freshness"]):
+                effective_freshness = FRESHNESS_CURRENT
         connection.execute(
             """
             UPDATE relationships SET
@@ -815,7 +820,7 @@ class SqlRelationshipStore:
                 object_cols["object_source_id"],
                 object_cols["object_part_key"],
                 object_cols["object_unresolved_key"],
-                freshness,
+                effective_freshness,
                 self._workspace_id,
                 relationship_id,
             ),
@@ -848,16 +853,15 @@ class SqlRelationshipStore:
         ).fetchone()
         if keep is not None and drop is not None:
             # Preserve human rejection/confirmation and the earliest first_seen_at.
-            # Copy origin/confidence/last_verified_at with verification so a
-            # verified provider_declared row cannot leave inferred+verified
-            # without a decision on the survivor.
+            # Stronger verification also copies origin/confidence/last_verified_at
+            # so inferred+verified without a decision cannot survive. A verification
+            # tie that only adds a decision must not demote provider_declared.
             drop_rank = _verification_priority(drop["verification"])
             keep_rank = _verification_priority(keep["verification"])
-            if drop_rank > keep_rank or (
-                drop_rank == keep_rank
-                and keep["decision_actor"] is None
-                and drop["decision_actor"] is not None
-            ):
+            next_version = (
+                max(int(keep["decision_version"]), int(drop["decision_version"])) + 1
+            )
+            if drop_rank > keep_rank:
                 connection.execute(
                     """
                     UPDATE relationships
@@ -870,14 +874,31 @@ class SqlRelationshipStore:
                         drop["verification"],
                         drop["decision_actor"],
                         drop["decision_at"],
-                        max(
-                            int(keep["decision_version"]),
-                            int(drop["decision_version"]),
-                        )
-                        + 1,
+                        next_version,
                         drop["origin"],
                         drop["confidence"],
                         drop["last_verified_at"],
+                        self._workspace_id,
+                        keep_id,
+                    ),
+                )
+            elif (
+                drop_rank == keep_rank
+                and keep["decision_actor"] is None
+                and drop["decision_actor"] is not None
+            ):
+                connection.execute(
+                    """
+                    UPDATE relationships
+                    SET verification = ?, decision_actor = ?, decision_at = ?,
+                        decision_version = ?
+                    WHERE workspace_id = ? AND relationship_id = ?
+                    """,
+                    (
+                        drop["verification"],
+                        drop["decision_actor"],
+                        drop["decision_at"],
+                        next_version,
                         self._workspace_id,
                         keep_id,
                     ),

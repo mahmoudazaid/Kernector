@@ -401,7 +401,65 @@ def test_merge_copies_origin_with_stronger_verification(
     assert loaded.origin == ORIGIN_PROVIDER_DECLARED
     assert loaded.verification == VERIFICATION_VERIFIED
     assert loaded.confidence == 1.0
-    assert loaded.freshness == "stale"
+    # Resolved row was current; prefer current over pending stale.
+    assert loaded.freshness == "current"
+
+
+def test_merge_tie_keeps_provider_declared_when_inferred_has_decision(
+    store: SqlRelationshipStore,
+) -> None:
+    from datetime import datetime, timezone
+
+    pending = store.upsert_from_evidence(
+        project_id="prj_orders",
+        subject=_ref("inst/PROJ:PROJ-1"),
+        relation_type="relates_to",
+        object=UnresolvedKey("PROJ-9"),
+        origin=ORIGIN_PROVIDER_DECLARED,
+        verification=VERIFICATION_VERIFIED,
+        confidence=1.0,
+        freshness="current",
+        evidence=_evidence(
+            "inst/PROJ:PROJ-1",
+            locator="field=issuelinks;type=Relates;dir=out;key=PROJ-9",
+            revision="r-provider",
+        ),
+        seen_at="2026-10-01T12:00:00Z",
+    )
+    inferred = store.upsert_from_evidence(
+        project_id="prj_orders",
+        subject=_ref("inst/PROJ:PROJ-1"),
+        relation_type="relates_to",
+        object=_ref("inst/PROJ:PROJ-9"),
+        origin=ORIGIN_INFERRED,
+        verification=VERIFICATION_UNVERIFIED,
+        confidence=0.4,
+        freshness="current",
+        evidence=_evidence(
+            "inst/PROJ:OTHER-1",
+            locator="field=model;span=1",
+            revision="r-inferred",
+        ),
+        seen_at="2026-10-02T12:00:00Z",
+    )
+    store.apply_decision(
+        inferred.relationship_id,
+        verification=VERIFICATION_VERIFIED,
+        actor="lead",
+        at=datetime(2026, 11, 24, 12, 0, tzinfo=timezone.utc),
+        expected_version=inferred.decision_version,
+    )
+
+    loaded = store.resolve_endpoints(
+        pending.relationship_id,
+        subject=_ref("inst/PROJ:PROJ-1"),
+        object=_ref("inst/PROJ:PROJ-9"),
+        freshness="current",
+    )
+    assert loaded.origin == ORIGIN_PROVIDER_DECLARED
+    assert loaded.confidence == 1.0
+    assert loaded.verification == VERIFICATION_VERIFIED
+    assert loaded.decision_actor == "lead"
 
 
 def test_mark_stale_for_evidence_ignores_matching_revision(

@@ -123,6 +123,89 @@ def test_drops_edges_when_evidence_source_no_longer_associated(
     assert use_case.execute("prj_orders", "PROJ-123") == ()
 
 
+def test_lists_part_and_whole_edges_with_direction(
+    index: SqlArtifactIndex, store: SqlRelationshipStore
+) -> None:
+    from domain.artifact.models import ArtifactPart
+    from domain.relationship.models import UnresolvedKey
+
+    index.upsert(
+        ArtifactDescriptor(
+            reference=SourceReference("inst/api:openapi.yaml", SourceType.GITHUB),
+            revision="r1",
+            kind=ArtifactKind.API_SPEC,
+            contexts=(ContextAssignment("operations", "role_default"),),
+            external_keys=("openapi", "GET /orders", "listOrders"),
+            title="openapi",
+            parts=(
+                ArtifactPart(
+                    kind="operation",
+                    part_key="GET /orders",
+                    operation_id="listOrders",
+                ),
+            ),
+        )
+    )
+    index.upsert(_descriptor("inst/PROJ:PROJ-140", "PROJ-140"))
+    store.upsert_from_evidence(
+        project_id="prj_orders",
+        subject=ArtifactRef(SourceReference("inst/PROJ:PROJ-140", "jira")),
+        relation_type="tests",
+        object=ArtifactRef(
+            SourceReference("inst/api:openapi.yaml", "github"),
+            part_key="GET /orders",
+        ),
+        origin=ORIGIN_PROVIDER_DECLARED,
+        verification=VERIFICATION_VERIFIED,
+        confidence=1.0,
+        freshness="current",
+        evidence=EvidenceRef(
+            source=SourceReference("inst/PROJ:PROJ-140", "jira"),
+            revision="r1",
+            locator="field=issuelinks;type=Tests;dir=out;key=openapi",
+            extractor_id="jira_explicit_links",
+        ),
+        seen_at="2026-10-01T12:00:00Z",
+    )
+    store.upsert_from_evidence(
+        project_id="prj_orders",
+        subject=ArtifactRef(SourceReference("inst/api:openapi.yaml", "github")),
+        relation_type="relates_to",
+        object=UnresolvedKey("DOC-1"),
+        origin=ORIGIN_PROVIDER_DECLARED,
+        verification=VERIFICATION_VERIFIED,
+        confidence=1.0,
+        freshness="current",
+        evidence=EvidenceRef(
+            source=SourceReference("inst/api:openapi.yaml", "github"),
+            revision="r1",
+            locator="field=issuelinks;type=Relates;dir=out;key=DOC-1",
+            extractor_id="jira_explicit_links",
+        ),
+        seen_at="2026-10-01T12:00:00Z",
+    )
+    use_case = ListArtifactRelationships(
+        store,
+        index,
+        project_exists=lambda project_id: project_id == "prj_orders",
+        project_ids_for=lambda _ref: ("prj_orders",),
+        inverse_names={"tests": "tested_by", "relates_to": "relates_to"},
+    )
+
+    by_part_key = {
+        (view.relation_type, view.direction): view
+        for view in use_case.execute("prj_orders", "GET /orders")
+    }
+    by_operation_id = {
+        (view.relation_type, view.direction): view
+        for view in use_case.execute("prj_orders", "listOrders")
+    }
+    assert set(by_part_key) == {("tested_by", "inward"), ("relates_to", "outward")}
+    assert set(by_operation_id) == set(by_part_key)
+    assert by_part_key[("tested_by", "inward")].object.part_key == "GET /orders"
+    assert by_part_key[("relates_to", "outward")].object.kind == "unresolved"
+
+
 def test_rejects_unknown_project_and_invisible_key(
     index: SqlArtifactIndex, store: SqlRelationshipStore
 ) -> None:
