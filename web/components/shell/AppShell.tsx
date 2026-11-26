@@ -85,8 +85,10 @@ export function AppShell({ children }: AppShellProps) {
           ) : (
             <Suspense
               fallback={
-                <div className="kern-content-state" aria-busy="true">
-                  <LoadingState label="Loading" />
+                <div aria-busy="true">
+                  <div className="kern-content-state">
+                    <LoadingState label="Loading" />
+                  </div>
                 </div>
               }
             >

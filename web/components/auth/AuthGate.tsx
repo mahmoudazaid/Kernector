@@ -49,8 +49,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   if (resolving) {
     return (
-      <div className="kern-content-state" aria-busy="true">
-        <LoadingState label="Checking session" />
+      <div aria-busy="true">
+        <div className="kern-content-state">
+          <LoadingState label="Checking session" />
+        </div>
       </div>
     );
   }
@@ -65,16 +67,20 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   if (!auth.user && !isLogin) {
     return (
-      <div className="kern-content-state" aria-busy="true">
-        <LoadingState label="Redirecting to login" />
+      <div aria-busy="true">
+        <div className="kern-content-state">
+          <LoadingState label="Redirecting to login" />
+        </div>
       </div>
     );
   }
 
   if (auth.user && isLogin) {
     return (
-      <div className="kern-content-state" aria-busy="true">
-        <LoadingState label="Opening workspace" />
+      <div aria-busy="true">
+        <div className="kern-content-state">
+          <LoadingState label="Opening workspace" />
+        </div>
       </div>
     );
   }
