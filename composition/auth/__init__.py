@@ -189,58 +189,64 @@ def grant_workspace_access(
         WorkspaceAccessGrant: Granted principal, workspace, and project ids.
 
     Raises:
-        ConfigurationError: User missing, project selection empty/invalid, or
-            a requested project does not exist in the bound workspace.
+        ConfigurationError: User missing, project selection empty/invalid,
+            a requested project does not exist in the bound workspace, or
+            auth/project store construction or access fails.
     """
     from composition.container import _require_workspace_id
     from composition.project.container import build_project_store
     from infrastructure.auth.errors import AuthStoreError, UserNotFoundError
+    from infrastructure.project.sql_store import ProjectStoreError
 
     resolved = settings if settings is not None else load_runtime_settings()
-    store = auth_store if auth_store is not None else build_auth_store(resolved)
-    projects = (
-        project_store
-        if project_store is not None
-        else build_project_store(resolved)
-    )
-    bound_workspace = (
-        workspace_id
-        if workspace_id is not None
-        else _require_workspace_id(resolved)
-    )
-
-    if all_existing_projects:
-        with projects.read() as tx:  # type: ignore[attr-defined]
-            selected = tuple(project.project_id for project in tx.projects.list())
-    else:
-        selected = tuple(project_ids or ())
-
-    if not selected:
-        raise ConfigurationError(
-            "provide --project-id values or --all-existing-projects "
-            "with at least one project in the workspace"
+    try:
+        store = auth_store if auth_store is not None else build_auth_store(resolved)
+        projects = (
+            project_store
+            if project_store is not None
+            else build_project_store(resolved)
+        )
+        bound_workspace = (
+            workspace_id
+            if workspace_id is not None
+            else _require_workspace_id(resolved)
         )
 
-    with projects.read() as tx:  # type: ignore[attr-defined]
-        missing = [
-            project_id
-            for project_id in selected
-            if tx.projects.get(project_id) is None
-        ]
-    if missing:
-        raise ConfigurationError("unknown project")
+        if all_existing_projects:
+            with projects.read() as tx:  # type: ignore[attr-defined]
+                selected = tuple(
+                    project.project_id for project in tx.projects.list()
+                )
+        else:
+            selected = tuple(project_ids or ())
 
-    user = store.get_user_by_username(username.strip())
-    if user is None:
-        raise ConfigurationError("user not found")
+        if not selected:
+            raise ConfigurationError(
+                "provide --project-id values or --all-existing-projects "
+                "with at least one project in the workspace"
+            )
 
-    try:
+        with projects.read() as tx:  # type: ignore[attr-defined]
+            missing = [
+                project_id
+                for project_id in selected
+                if tx.projects.get(project_id) is None
+            ]
+        if missing:
+            raise ConfigurationError("unknown project")
+
+        user = store.get_user_by_username(username.strip())
+        if user is None:
+            raise ConfigurationError("user not found")
+
         store.grant_membership_with_projects(
             user.user_id, bound_workspace, selected
         )
+    except ConfigurationError:
+        raise
     except UserNotFoundError as error:
         raise ConfigurationError("user not found") from error
-    except (AuthStoreError, ValueError, OSError) as error:
+    except (AuthStoreError, ProjectStoreError, ValueError, OSError) as error:
         raise ConfigurationError(str(error)) from error
 
     return WorkspaceAccessGrant(
