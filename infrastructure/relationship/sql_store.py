@@ -1,4 +1,4 @@
-"""SQLite RelationshipStore bound to one workspace (catalog DB, migration 010)."""
+"""SQLite RelationshipStore bound to one workspace (catalog DB, migration 010+)."""
 
 from __future__ import annotations
 
@@ -13,11 +13,19 @@ from domain.knowledge import SourceReference
 from domain.relationship.errors import RelationshipInputError
 from domain.relationship.models import (
     FRESHNESS_CURRENT,
+    FRESHNESS_REMOVED,
+    FRESHNESS_STALE,
+    ORIGIN_DETERMINISTIC,
     VERIFICATION_REJECTED,
     VERIFICATION_VERIFIED,
     EvidenceRef,
     Relationship,
     UnresolvedKey,
+)
+from domain.relationship.ports import (
+    WATERMARK_KIND_DETERMINISTIC,
+    WATERMARK_KIND_PROVIDER_DECLARED,
+    DeterministicEdgeWrite,
 )
 from infrastructure.catalog import _connection
 from infrastructure.catalog.sql_schema import apply_migrations
@@ -563,29 +571,18 @@ class SqlRelationshipStore:
             connection.close()
 
     def set_record_watermark(
-        self, reference: SourceReference, links_fingerprint: str
+        self,
+        reference: SourceReference,
+        links_fingerprint: str,
+        *,
+        kind: str = WATERMARK_KIND_PROVIDER_DECLARED,
     ) -> None:
         """Record that relationships for ``reference`` were written successfully."""
         connection = _connection.connect(self._path)
         try:
             connection.execute("BEGIN IMMEDIATE")
-            connection.execute(
-                """
-                INSERT INTO relationship_record_watermarks (
-                    workspace_id, source_type, source_id, links_fingerprint,
-                    recorded_at
-                ) VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(workspace_id, source_type, source_id) DO UPDATE SET
-                    links_fingerprint = excluded.links_fingerprint,
-                    recorded_at = excluded.recorded_at
-                """,
-                (
-                    self._workspace_id,
-                    reference.source_type,
-                    reference.source_id,
-                    links_fingerprint,
-                    _now(),
-                ),
+            self._set_watermark(
+                connection, reference, links_fingerprint, kind=kind
             )
             connection.execute("COMMIT")
         except Exception:
@@ -594,40 +591,185 @@ class SqlRelationshipStore:
         finally:
             connection.close()
 
-    def get_record_watermark(self, reference: SourceReference) -> str | None:
-        """Return the last successful links fingerprint, or ``None``."""
+    def get_record_watermark(
+        self,
+        reference: SourceReference,
+        *,
+        kind: str = WATERMARK_KIND_PROVIDER_DECLARED,
+    ) -> str | None:
+        """Return the last successful links fingerprint for ``kind``, or ``None``."""
         connection = _connection.connect(self._path)
         try:
             row = connection.execute(
                 """
                 SELECT links_fingerprint FROM relationship_record_watermarks
-                WHERE workspace_id = ? AND source_type = ? AND source_id = ?
+                WHERE workspace_id = ?
+                  AND source_type = ?
+                  AND source_id = ?
+                  AND kind = ?
                 """,
                 (
                     self._workspace_id,
                     reference.source_type,
                     reference.source_id,
+                    kind,
                 ),
             ).fetchone()
             return None if row is None else str(row["links_fingerprint"])
         finally:
             connection.close()
 
-    def clear_record_watermark(self, reference: SourceReference) -> None:
-        """Drop the record watermark so a returning artifact re-records."""
+    def clear_record_watermark(
+        self,
+        reference: SourceReference,
+        *,
+        kind: str | None = None,
+    ) -> None:
+        """Drop watermarks for ``reference`` (one kind or every kind)."""
         connection = _connection.connect(self._path)
         try:
             connection.execute("BEGIN IMMEDIATE")
-            connection.execute(
-                """
-                DELETE FROM relationship_record_watermarks
-                WHERE workspace_id = ? AND source_type = ? AND source_id = ?
-                """,
-                (
-                    self._workspace_id,
-                    reference.source_type,
-                    reference.source_id,
-                ),
+            if kind is None:
+                connection.execute(
+                    """
+                    DELETE FROM relationship_record_watermarks
+                    WHERE workspace_id = ? AND source_type = ? AND source_id = ?
+                    """,
+                    (
+                        self._workspace_id,
+                        reference.source_type,
+                        reference.source_id,
+                    ),
+                )
+            else:
+                connection.execute(
+                    """
+                    DELETE FROM relationship_record_watermarks
+                    WHERE workspace_id = ?
+                      AND source_type = ?
+                      AND source_id = ?
+                      AND kind = ?
+                    """,
+                    (
+                        self._workspace_id,
+                        reference.source_type,
+                        reference.source_id,
+                        kind,
+                    ),
+                )
+            connection.execute("COMMIT")
+        except Exception:
+            connection.execute("ROLLBACK")
+            raise
+        finally:
+            connection.close()
+
+    def replace_owned_deterministic_evidence(
+        self,
+        *,
+        source: SourceReference,
+        revision: str,
+        owned_rule_ids: frozenset[str],
+        edges: Sequence[DeterministicEdgeWrite],
+        watermark: str,
+        seen_at: str,
+    ) -> None:
+        """Atomically replace evidence owned by the exact ``owned_rule_ids`` set."""
+        if not owned_rule_ids:
+            raise RelationshipInputError("owned_rule_ids must not be empty")
+        rule_ids = tuple(sorted(owned_rule_ids))
+        connection = _connection.connect(self._path)
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            previously_owned = self._relationship_ids_with_owned_evidence(
+                connection, source=source, rule_ids=rule_ids
+            )
+            matched_ids: set[str] = set()
+            for edge in edges:
+                if edge.evidence.extractor_id not in owned_rule_ids:
+                    raise RelationshipInputError(
+                        "evidence extractor_id must be in owned_rule_ids"
+                    )
+                if edge.evidence.source != source:
+                    raise RelationshipInputError(
+                        "evidence source must match the replace source"
+                    )
+                if edge.evidence.revision != revision:
+                    raise RelationshipInputError(
+                        "evidence revision must match the replace revision"
+                    )
+                relationship_id = self._upsert_deterministic_edge(
+                    connection,
+                    edge=edge,
+                    seen_at=seen_at,
+                )
+                matched_ids.add(relationship_id)
+                self._delete_owned_evidence(
+                    connection,
+                    relationship_id=relationship_id,
+                    source=source,
+                    rule_ids=rule_ids,
+                )
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO relationship_evidence (
+                        workspace_id, relationship_id, source_type, source_id,
+                        revision, locator, extractor_id, recorded_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        self._workspace_id,
+                        relationship_id,
+                        source.source_type,
+                        source.source_id,
+                        revision,
+                        edge.evidence.locator,
+                        edge.evidence.extractor_id,
+                        seen_at,
+                    ),
+                )
+                connection.execute(
+                    """
+                    UPDATE relationships
+                    SET freshness = ?
+                    WHERE workspace_id = ? AND relationship_id = ?
+                    """,
+                    (FRESHNESS_CURRENT, self._workspace_id, relationship_id),
+                )
+
+            for relationship_id in previously_owned - matched_ids:
+                other_count = self._count_non_owned_evidence(
+                    connection,
+                    relationship_id=relationship_id,
+                    source=source,
+                    rule_ids=rule_ids,
+                )
+                if other_count > 0:
+                    self._delete_owned_evidence(
+                        connection,
+                        relationship_id=relationship_id,
+                        source=source,
+                        rule_ids=rule_ids,
+                    )
+                else:
+                    connection.execute(
+                        """
+                        UPDATE relationships
+                        SET freshness = ?
+                        WHERE workspace_id = ? AND relationship_id = ?
+                        """,
+                        (
+                            FRESHNESS_REMOVED,
+                            self._workspace_id,
+                            relationship_id,
+                        ),
+                    )
+
+            self._set_watermark(
+                connection,
+                source,
+                watermark,
+                kind=WATERMARK_KIND_DETERMINISTIC,
             )
             connection.execute("COMMIT")
         except Exception:
@@ -635,6 +777,230 @@ class SqlRelationshipStore:
             raise
         finally:
             connection.close()
+
+    def mark_owned_deterministic_stale(
+        self,
+        *,
+        source: SourceReference,
+        owned_rule_ids: frozenset[str],
+        watermark: str,
+    ) -> None:
+        """Mark owned deterministic edges stale without removing evidence."""
+        if not owned_rule_ids:
+            raise RelationshipInputError("owned_rule_ids must not be empty")
+        rule_ids = tuple(sorted(owned_rule_ids))
+        connection = _connection.connect(self._path)
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            for relationship_id in self._relationship_ids_with_owned_evidence(
+                connection, source=source, rule_ids=rule_ids
+            ):
+                connection.execute(
+                    """
+                    UPDATE relationships
+                    SET freshness = ?
+                    WHERE workspace_id = ? AND relationship_id = ?
+                    """,
+                    (FRESHNESS_STALE, self._workspace_id, relationship_id),
+                )
+            self._set_watermark(
+                connection,
+                source,
+                watermark,
+                kind=WATERMARK_KIND_DETERMINISTIC,
+            )
+            connection.execute("COMMIT")
+        except Exception:
+            connection.execute("ROLLBACK")
+            raise
+        finally:
+            connection.close()
+
+    def _set_watermark(
+        self,
+        connection: sqlite3.Connection,
+        reference: SourceReference,
+        links_fingerprint: str,
+        *,
+        kind: str,
+    ) -> None:
+        connection.execute(
+            """
+            INSERT INTO relationship_record_watermarks (
+                workspace_id, source_type, source_id, kind, links_fingerprint,
+                recorded_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(workspace_id, source_type, source_id, kind) DO UPDATE SET
+                links_fingerprint = excluded.links_fingerprint,
+                recorded_at = excluded.recorded_at
+            """,
+            (
+                self._workspace_id,
+                reference.source_type,
+                reference.source_id,
+                kind,
+                links_fingerprint,
+                _now(),
+            ),
+        )
+
+    def _relationship_ids_with_owned_evidence(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        source: SourceReference,
+        rule_ids: Sequence[str],
+    ) -> set[str]:
+        placeholders = ", ".join("?" for _ in rule_ids)
+        rows = connection.execute(
+            f"""
+            SELECT DISTINCT relationship_id
+            FROM relationship_evidence
+            WHERE workspace_id = ?
+              AND source_type = ?
+              AND source_id = ?
+              AND extractor_id IN ({placeholders})
+            """,
+            (
+                self._workspace_id,
+                source.source_type,
+                source.source_id,
+                *rule_ids,
+            ),
+        ).fetchall()
+        return {str(row["relationship_id"]) for row in rows}
+
+    def _delete_owned_evidence(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        relationship_id: str,
+        source: SourceReference,
+        rule_ids: Sequence[str],
+    ) -> None:
+        placeholders = ", ".join("?" for _ in rule_ids)
+        connection.execute(
+            f"""
+            DELETE FROM relationship_evidence
+            WHERE workspace_id = ?
+              AND relationship_id = ?
+              AND source_type = ?
+              AND source_id = ?
+              AND extractor_id IN ({placeholders})
+            """,
+            (
+                self._workspace_id,
+                relationship_id,
+                source.source_type,
+                source.source_id,
+                *rule_ids,
+            ),
+        )
+
+    def _count_non_owned_evidence(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        relationship_id: str,
+        source: SourceReference,
+        rule_ids: Sequence[str],
+    ) -> int:
+        placeholders = ", ".join("?" for _ in rule_ids)
+        row = connection.execute(
+            f"""
+            SELECT COUNT(*) AS n
+            FROM relationship_evidence
+            WHERE workspace_id = ?
+              AND relationship_id = ?
+              AND NOT (
+                source_type = ?
+                AND source_id = ?
+                AND extractor_id IN ({placeholders})
+              )
+            """,
+            (
+                self._workspace_id,
+                relationship_id,
+                source.source_type,
+                source.source_id,
+                *rule_ids,
+            ),
+        ).fetchone()
+        return int(row["n"]) if row is not None else 0
+
+    def _upsert_deterministic_edge(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        edge: DeterministicEdgeWrite,
+        seen_at: str,
+    ) -> str:
+        subject_tokens = self._candidate_tokens(edge.subject, edge.subject_aliases)
+        object_tokens = self._candidate_tokens(edge.object, edge.object_aliases)
+        matches = self._find_matches(
+            connection,
+            project_id=edge.project_id,
+            relation_type=edge.relation_type,
+            subject_tokens=subject_tokens,
+            object_tokens=object_tokens,
+        )
+        if not matches:
+            relationship_id = new_relationship_id()
+            self._insert_edge(
+                connection,
+                relationship_id=relationship_id,
+                project_id=edge.project_id,
+                subject=edge.subject,
+                relation_type=edge.relation_type,
+                object=edge.object,
+                origin=ORIGIN_DETERMINISTIC,
+                verification=VERIFICATION_VERIFIED,
+                confidence=1.0,
+                freshness=FRESHNESS_CURRENT,
+                seen_at=seen_at,
+                last_verified_at=seen_at,
+            )
+            return relationship_id
+
+        survivor = _pick_merge_survivor(matches)
+        relationship_id = str(survivor["relationship_id"])
+        merged_subject = edge.subject
+        merged_object = edge.object
+        for row in matches:
+            merged_subject = _prefer_resolved(
+                _endpoint_from_row(row, "subject"), merged_subject
+            )
+            merged_object = _prefer_resolved(
+                _endpoint_from_row(row, "object"), merged_object
+            )
+        for row in matches:
+            if row["relationship_id"] == relationship_id:
+                continue
+            self._merge_into(
+                connection,
+                keep_id=relationship_id,
+                drop_id=row["relationship_id"],
+            )
+        # Preserve fixed origin and human decision fields on collision.
+        self._rewrite_endpoints(
+            connection,
+            relationship_id=relationship_id,
+            project_id=edge.project_id,
+            relation_type=edge.relation_type,
+            subject=merged_subject,
+            object=merged_object,
+            freshness=FRESHNESS_CURRENT,
+        )
+        connection.execute(
+            """
+            UPDATE relationships
+            SET last_verified_at = ?
+            WHERE workspace_id = ? AND relationship_id = ?
+              AND (last_verified_at IS NULL OR last_verified_at < ?)
+            """,
+            (seen_at, self._workspace_id, relationship_id, seen_at),
+        )
+        return relationship_id
 
     def _candidate_tokens(
         self,
