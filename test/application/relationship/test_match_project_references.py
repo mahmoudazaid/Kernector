@@ -618,6 +618,34 @@ def test_header_ignores_body_keys_in_first_forty_lines(tmp_path: Path) -> None:
     assert store.list_for_artifact(PROJECT, ArtifactRef(subject.reference)) == ()
 
 
+def test_header_docstring_after_shebang_and_license_comments(tmp_path: Path) -> None:
+    store, index, catalog, membership, match = _harness(tmp_path, _story("PROJ-7"))
+    cases = [
+        '"""Cancel orders (PROJ-7)."""\nimport os\n',
+        '#!/usr/bin/env python\n"""Cancel orders (PROJ-7)."""\nimport os\n',
+        (
+            "# Copyright 2026 Acme\n"
+            "# SPDX-License-Identifier: MIT\n"
+            "\n"
+            '"""Cancel orders (PROJ-7)."""\n'
+            "import os\n"
+        ),
+    ]
+    for index_no, content in enumerate(cases):
+        source_id = f"gh/acme/proj/orders/cancel_{index_no}.py"
+        subject = ArtifactDescriptor(
+            reference=SourceReference(source_id, "github"),
+            revision="rev1",
+            kind=ArtifactKind.CODE_FILE,
+            contexts=(ContextAssignment("backend", "path_rule"),),
+        )
+        _register_subject(index, catalog, membership, subject)
+        match.execute(_source(source_id, content), revision="rev1")
+        edges = store.list_for_artifact(PROJECT, ArtifactRef(subject.reference))
+        assert len(edges) == 1
+        assert edges[0].evidence[0].extractor_id == "key_mention.header"
+
+
 def test_replace_preserves_provider_evidence_on_same_edge(tmp_path: Path) -> None:
     store, index, catalog, membership, match = _harness(tmp_path, _story("PROJ-123"))
     source_id = "gh/file.robot"

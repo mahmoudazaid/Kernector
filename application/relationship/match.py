@@ -13,7 +13,7 @@ from application.relationship.catalogue import (
     catalogue_fingerprint,
     limits_fingerprint,
 )
-from domain.artifact.models import ArtifactRef
+from domain.artifact.models import ArtifactDescriptor, ArtifactRef
 from domain.artifact.ports import ArtifactIndex
 from domain.knowledge import SourceDocument, SourceReference
 from domain.ports import DocumentCatalog
@@ -113,6 +113,14 @@ class MatchProjectReferences:
     def invalidate_catalogue(self) -> None:
         """Drop cached project catalogues after the artifact index changes."""
         self._catalogue.invalidate()
+
+    def apply_catalogue_upsert(self, descriptor: ArtifactDescriptor) -> None:
+        """Patch warm catalogue caches for one upserted descriptor."""
+        self._catalogue.apply_upsert(descriptor)
+
+    def apply_catalogue_remove(self, reference: SourceReference) -> None:
+        """Patch warm catalogue caches for one removed descriptor."""
+        self._catalogue.apply_remove(reference)
 
     def needs_record(self, source: SourceDocument, *, revision: str) -> bool:
         if self._index.get(source.reference) is None:

@@ -62,6 +62,10 @@ def limits_fingerprint(limits: MatchLimits) -> str:
     )
 
 
+def _ref_key(reference: SourceReference) -> tuple[str, str]:
+    return (reference.source_type, reference.source_id)
+
+
 class ProjectCatalogueBuilder:
     """Enumerate known keys and current API operations for one project."""
 
@@ -76,6 +80,7 @@ class ProjectCatalogueBuilder:
         self._project_ids_for = project_ids_for
         self._limits = limits
         self._by_project: dict[str, tuple[ArtifactDescriptor, ...]] | None = None
+        self._descriptor_projects: dict[tuple[str, str], frozenset[str]] = {}
         self._build_cache: dict[
             str,
             tuple[
@@ -88,7 +93,52 @@ class ProjectCatalogueBuilder:
     def invalidate(self) -> None:
         """Drop cached scope/membership so the next build reloads the index."""
         self._by_project = None
+        self._descriptor_projects.clear()
         self._build_cache.clear()
+
+    def apply_upsert(self, descriptor: ArtifactDescriptor) -> None:
+        """Patch a warm cache for one upserted descriptor without a full rescan."""
+        if self._by_project is None:
+            return
+        key = _ref_key(descriptor.reference)
+        old_projects = self._descriptor_projects.get(key, frozenset())
+        new_projects = frozenset(self._project_ids_for(descriptor.reference))
+        affected = old_projects | new_projects
+        for project_id in affected:
+            current = [
+                item
+                for item in self._by_project.get(project_id, ())
+                if _ref_key(item.reference) != key
+            ]
+            if project_id in new_projects:
+                current.append(descriptor)
+            if current:
+                self._by_project[project_id] = tuple(current)
+            else:
+                self._by_project.pop(project_id, None)
+            self._build_cache.pop(project_id, None)
+        if new_projects:
+            self._descriptor_projects[key] = new_projects
+        else:
+            self._descriptor_projects.pop(key, None)
+
+    def apply_remove(self, reference: SourceReference) -> None:
+        """Patch a warm cache for one removed descriptor without a full rescan."""
+        if self._by_project is None:
+            return
+        key = _ref_key(reference)
+        old_projects = self._descriptor_projects.pop(key, frozenset())
+        for project_id in old_projects:
+            current = tuple(
+                item
+                for item in self._by_project.get(project_id, ())
+                if _ref_key(item.reference) != key
+            )
+            if current:
+                self._by_project[project_id] = current
+            else:
+                self._by_project.pop(project_id, None)
+            self._build_cache.pop(project_id, None)
 
     def descriptors_for_project(
         self, project_id: str
@@ -163,9 +213,17 @@ class ProjectCatalogueBuilder:
         if self._by_project is not None:
             return
         by_project: dict[str, list[ArtifactDescriptor]] = {}
+        descriptor_projects: dict[tuple[str, str], set[str]] = {}
         for descriptor in self._index.list_for_scope():
-            for project_id in self._project_ids_for(descriptor.reference):
+            key = _ref_key(descriptor.reference)
+            project_ids = self._project_ids_for(descriptor.reference)
+            descriptor_projects[key] = set(project_ids)
+            for project_id in project_ids:
                 by_project.setdefault(project_id, []).append(descriptor)
         self._by_project = {
             project_id: tuple(items) for project_id, items in by_project.items()
+        }
+        self._descriptor_projects = {
+            key: frozenset(projects)
+            for key, projects in descriptor_projects.items()
         }

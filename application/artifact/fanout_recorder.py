@@ -7,6 +7,7 @@ from collections.abc import Sequence
 
 from application.artifact.sync import RelationshipRecorder
 from application.observability import log_operation
+from domain.artifact.models import ArtifactDescriptor
 from domain.knowledge import SourceDocument, SourceReference
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,20 @@ class FanOutRelationshipRecorder:
             invalidate = getattr(child, "invalidate_catalogue", None)
             if callable(invalidate):
                 invalidate()
+
+    def apply_catalogue_upsert(self, descriptor: ArtifactDescriptor) -> None:
+        """Forward incremental catalogue upserts to children that support them."""
+        for child in self._recorders:
+            apply = getattr(child, "apply_catalogue_upsert", None)
+            if callable(apply):
+                apply(descriptor)
+
+    def apply_catalogue_remove(self, reference: SourceReference) -> None:
+        """Forward incremental catalogue removals to children that support them."""
+        for child in self._recorders:
+            apply = getattr(child, "apply_catalogue_remove", None)
+            if callable(apply):
+                apply(reference)
 
     def resolve_arriving(self, source: SourceDocument) -> None:
         for child in self._recorders:

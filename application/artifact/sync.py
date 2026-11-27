@@ -14,6 +14,7 @@ from domain.artifact.ports import ArtifactDescriptorExtractor, ArtifactIndex
 from domain.artifact.rules import ContextClassificationRule
 from domain.knowledge import SourceDocument, SourceReference
 
+
 logger = logging.getLogger(__name__)
 
 ClassifyFn = Callable[
@@ -91,7 +92,7 @@ class SyncArtifactDescriptors:
         descriptor = self._extractor.describe(source)
         if descriptor is None:
             self._index.remove(source.reference)
-            self._invalidate_relationship_catalogue()
+            self._apply_catalogue_remove(source.reference)
             self._record_relationships(source, revision=revision)
             return
         descriptor = replace(descriptor, revision=revision)
@@ -104,7 +105,7 @@ class SyncArtifactDescriptors:
                 component_ids=self._component_ids_for(source.reference),
             )
         self._upsert_with_retry(descriptor)
-        self._invalidate_relationship_catalogue()
+        self._apply_catalogue_upsert(descriptor)
         self._record_relationships(source, revision=revision)
 
     def on_skipped(self, reference: SourceReference) -> None:
@@ -138,16 +139,23 @@ class SyncArtifactDescriptors:
     def on_removed(self, reference: SourceReference) -> None:
         """Delete the descriptor when the catalog source is removed."""
         self._index.remove(reference)
-        self._invalidate_relationship_catalogue()
+        self._apply_catalogue_remove(reference)
         if self._relationships is not None:
             self._relationships.clear_watermark(reference)
 
-    def _invalidate_relationship_catalogue(self) -> None:
+    def _apply_catalogue_upsert(self, descriptor: ArtifactDescriptor) -> None:
         if self._relationships is None:
             return
-        invalidate = getattr(self._relationships, "invalidate_catalogue", None)
-        if callable(invalidate):
-            invalidate()
+        apply = getattr(self._relationships, "apply_catalogue_upsert", None)
+        if callable(apply):
+            apply(descriptor)
+
+    def _apply_catalogue_remove(self, reference: SourceReference) -> None:
+        if self._relationships is None:
+            return
+        apply = getattr(self._relationships, "apply_catalogue_remove", None)
+        if callable(apply):
+            apply(reference)
 
     def _record_relationships(self, source: SourceDocument, *, revision: str) -> None:
         if self._relationships is None:
