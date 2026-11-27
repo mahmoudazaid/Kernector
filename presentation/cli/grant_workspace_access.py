@@ -24,10 +24,17 @@ from composition.auth import grant_workspace_access
 
 
 class GrantResult(Protocol):
-    username: str
-    user_id: str
-    workspace_id: str
-    project_ids: tuple[str, ...]
+    @property
+    def username(self) -> str: ...
+
+    @property
+    def user_id(self) -> str: ...
+
+    @property
+    def workspace_id(self) -> str: ...
+
+    @property
+    def project_ids(self) -> tuple[str, ...]: ...
 
 
 def main(
