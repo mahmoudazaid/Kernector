@@ -2,10 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { McpAccessPanel } from "@/components/settings/McpAccessPanel";
-import {
-  claudeCodeMcpConfig,
-  mcpClientConfig,
-} from "@/lib/api/mcp-profiles";
+import { mcpClientConfig } from "@/lib/api/mcp-profiles";
 
 async function openCreate(user: ReturnType<typeof userEvent.setup>) {
   await waitFor(() => {
@@ -152,12 +149,20 @@ describe("McpAccessPanel", () => {
     });
     expect(saveAllowlist).toHaveBeenCalledWith("mcp_1", ["core.project_list"]);
     const callout = screen.getByRole("status");
-    expect(callout.textContent).toContain(
-      mcpClientConfig("http://127.0.0.1:8100/mcp", "once-only-token"),
+    const config = mcpClientConfig(
+      "http://127.0.0.1:8100/mcp",
+      "once-only-token",
     );
-    expect(callout.textContent).toContain(
-      claudeCodeMcpConfig("http://127.0.0.1:8100/mcp", "once-only-token"),
-    );
+    expect(callout.textContent).toContain(config);
+    // Regression: one shared client config only (not Cursor + Claude Code).
+    expect(callout.querySelectorAll(".kern-mcp-snippet")).toHaveLength(1);
+    expect(within(callout).getByText("Client config")).toBeInTheDocument();
+    expect(
+      within(callout).queryByText("Claude Code .mcp.json"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(callout).queryByText("Cursor mcp.json"),
+    ).not.toBeInTheDocument();
     expect(within(callout).getByText("CI agent")).toBeInTheDocument();
     expect(screen.queryByText(/^active$/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/tools:/i)).not.toBeInTheDocument();
@@ -167,29 +172,14 @@ describe("McpAccessPanel", () => {
       expect(writeText).toHaveBeenCalledWith("once-only-token");
     });
 
-    const cursorConfig = mcpClientConfig(
-      "http://127.0.0.1:8100/mcp",
-      "once-only-token",
-    );
-    const claudeConfig = claudeCodeMcpConfig(
-      "http://127.0.0.1:8100/mcp",
-      "once-only-token",
-    );
-    expect(cursorConfig).toContain("http://127.0.0.1:8100/mcp");
-    expect(cursorConfig).toContain("Bearer once-only-token");
-    expect(cursorConfig).not.toContain('"type"');
-    expect(claudeConfig).toContain('"type": "http"');
+    expect(config).toContain("http://127.0.0.1:8100/mcp");
+    expect(config).toContain("Bearer once-only-token");
+    expect(config).not.toContain('"type"');
     await user.click(
-      screen.getByRole("button", { name: /^copy cursor config$/i }),
+      screen.getByRole("button", { name: /^copy client config$/i }),
     );
     await waitFor(() => {
-      expect(writeText).toHaveBeenCalledWith(cursorConfig);
-    });
-    await user.click(
-      screen.getByRole("button", { name: /^copy claude code config$/i }),
-    );
-    await waitFor(() => {
-      expect(writeText).toHaveBeenCalledWith(claudeConfig);
+      expect(writeText).toHaveBeenCalledWith(config);
     });
 
     await user.click(screen.getByRole("button", { name: /^done$/i }));
