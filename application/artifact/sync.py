@@ -91,6 +91,7 @@ class SyncArtifactDescriptors:
         descriptor = self._extractor.describe(source)
         if descriptor is None:
             self._index.remove(source.reference)
+            self._invalidate_relationship_catalogue()
             self._record_relationships(source, revision=revision)
             return
         descriptor = replace(descriptor, revision=revision)
@@ -103,6 +104,7 @@ class SyncArtifactDescriptors:
                 component_ids=self._component_ids_for(source.reference),
             )
         self._upsert_with_retry(descriptor)
+        self._invalidate_relationship_catalogue()
         self._record_relationships(source, revision=revision)
 
     def on_skipped(self, reference: SourceReference) -> None:
@@ -136,8 +138,16 @@ class SyncArtifactDescriptors:
     def on_removed(self, reference: SourceReference) -> None:
         """Delete the descriptor when the catalog source is removed."""
         self._index.remove(reference)
+        self._invalidate_relationship_catalogue()
         if self._relationships is not None:
             self._relationships.clear_watermark(reference)
+
+    def _invalidate_relationship_catalogue(self) -> None:
+        if self._relationships is None:
+            return
+        invalidate = getattr(self._relationships, "invalidate_catalogue", None)
+        if callable(invalidate):
+            invalidate()
 
     def _record_relationships(self, source: SourceDocument, *, revision: str) -> None:
         if self._relationships is None:

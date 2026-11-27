@@ -107,6 +107,7 @@ def build_match_project_references(settings: Settings) -> MatchProjectReferences
         KeyMentionHeaderMatcher,
         KeyMentionTagMatcher,
     )
+    from packs.software_delivery.relationship.types import CONTEXT_RELATIONS
 
     from composition.artifact.container import _require_catalog_sql_path
     from composition.container import _require_workspace_id
@@ -128,6 +129,7 @@ def build_match_project_references(settings: Settings) -> MatchProjectReferences
         ),
         limits=DEFAULT_MATCH_LIMITS,
         rule_catalogue_version=RULE_CATALOGUE_VERSION,
+        context_relations=CONTEXT_RELATIONS,
     )
 
 

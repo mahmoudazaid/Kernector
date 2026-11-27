@@ -62,6 +62,7 @@ class ApiOperationCatalogueEntry:
 
     operation_id: str | None
     method_path: str | None
+    raw_part_key: str | None = None
 
     def __post_init__(self) -> None:
         if self.operation_id is None and self.method_path is None:
@@ -72,6 +73,8 @@ class ApiOperationCatalogueEntry:
             _require_text(self.operation_id, "operation_id")
         if self.method_path is not None:
             _require_text(self.method_path, "method_path")
+        if self.raw_part_key is not None:
+            _require_text(self.raw_part_key, "raw_part_key")
 
 
 @dataclass(frozen=True, slots=True)

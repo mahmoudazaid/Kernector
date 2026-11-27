@@ -34,15 +34,6 @@ logger = logging.getLogger(__name__)
 
 ProjectIdsForSource = Callable[[SourceReference], tuple[str, ...]]
 
-_CONTEXT_RELATIONS: Mapping[str, str] = {
-    "business": "references",
-    "frontend": "references",
-    "backend": "references",
-    "operations": "references",
-    "testing": "exercises",
-    "documentation": "describes",
-}
-
 _WATERMARK_VERSION = "det-v1"
 _BOUNDS_CODES = frozenset(
     {"content_too_large", "catalogue_overflow", "mention_overflow"}
@@ -67,11 +58,14 @@ def encode_match_watermark(
     )
 
 
-def relations_for_contexts(contexts: Sequence[str]) -> tuple[str, ...]:
+def relations_for_contexts(
+    contexts: Sequence[str],
+    context_relations: Mapping[str, str],
+) -> tuple[str, ...]:
     """Map subject contexts to API-mention relation types (deduped, stable)."""
     found: list[str] = []
     for context in contexts:
-        relation = _CONTEXT_RELATIONS.get(context)
+        relation = context_relations.get(context)
         if relation is not None and relation not in found:
             found.append(relation)
     return tuple(found)
@@ -90,6 +84,7 @@ class MatchProjectReferences:
         matchers: Sequence[DeterministicMatcher],
         limits: MatchLimits,
         rule_catalogue_version: str,
+        context_relations: Mapping[str, str],
         lookup: LookupArtifacts | None = None,
         now: Callable[[], str] | None = None,
     ) -> None:
@@ -100,6 +95,7 @@ class MatchProjectReferences:
         self._matchers = tuple(matchers)
         self._limits = limits
         self._rule_catalogue_version = rule_catalogue_version
+        self._context_relations = dict(context_relations)
         self._lookup = lookup or LookupArtifacts(
             index, catalog, project_ids_for=project_ids_for
         )
@@ -113,6 +109,10 @@ class MatchProjectReferences:
         """Deterministic matching applies to any source that can carry text."""
         del reference
         return True
+
+    def invalidate_catalogue(self) -> None:
+        """Drop cached project catalogues after the artifact index changes."""
+        self._catalogue.invalidate()
 
     def needs_record(self, source: SourceDocument, *, revision: str) -> bool:
         if self._index.get(source.reference) is None:
@@ -190,6 +190,8 @@ class MatchProjectReferences:
                         observed_count=self._limits.max_catalogue_entries + 1,
                     )
                 )
+                # Keep fingerprint tokens aligned with ``_watermark_current``.
+                catalogue_fps.append("overflow")
                 continue
             catalogue_fps.append(
                 catalogue_fingerprint(key_catalogue, api_operations)
@@ -302,7 +304,9 @@ class MatchProjectReferences:
             if mention.relation_type is not None:
                 relations = (mention.relation_type,)
             else:
-                relations = relations_for_contexts(subject_contexts)
+                relations = relations_for_contexts(
+                    subject_contexts, self._context_relations
+                )
                 if not relations:
                     continue
             matches = self._lookup.execute(

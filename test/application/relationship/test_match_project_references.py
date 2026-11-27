@@ -33,6 +33,7 @@ from packs.software_delivery.relationship.matchers.api_operation import (
 from packs.software_delivery.relationship.matchers.doc import KeyMentionDocMatcher
 from packs.software_delivery.relationship.matchers.header import KeyMentionHeaderMatcher
 from packs.software_delivery.relationship.matchers.tag import KeyMentionTagMatcher
+from packs.software_delivery.relationship.types import CONTEXT_RELATIONS
 from test.document_doubles import InMemoryDocumentCatalog
 
 NOW = datetime(2026, 11, 26, tzinfo=UTC)
@@ -116,6 +117,7 @@ def _harness(tmp_path: Path, *descriptors: ArtifactDescriptor):
         ),
         limits=LIMITS,
         rule_catalogue_version="software_delivery.matchers.v1",
+        context_relations=CONTEXT_RELATIONS,
         now=lambda: "2026-11-26T12:00:00Z",
     )
     return store, index, catalog, membership, match
@@ -328,6 +330,7 @@ def test_mention_overflow_is_non_destructive(tmp_path: Path) -> None:
         matchers=(KeyMentionTagMatcher(),),
         limits=tight,
         rule_catalogue_version="software_delivery.matchers.v1",
+        context_relations=CONTEXT_RELATIONS,
         now=lambda: "2026-11-26T12:00:00Z",
     )
     source_id = "gh/file.robot"
@@ -349,6 +352,7 @@ def test_mention_overflow_is_non_destructive(tmp_path: Path) -> None:
         matchers=(KeyMentionTagMatcher(),),
         limits=LIMITS,
         rule_catalogue_version="software_delivery.matchers.v1",
+        context_relations=CONTEXT_RELATIONS,
         now=lambda: "2026-11-26T12:00:00Z",
     )
     match_seed.execute(
@@ -455,6 +459,7 @@ def test_unchanged_revision_skipped_until_catalogue_changes(tmp_path: Path) -> N
     index.upsert(new_story)
     catalog.upsert(_catalog_row(new_story.reference))
     membership[("jira", new_story.reference.source_id)] = (PROJECT,)
+    match.invalidate_catalogue()
     assert match.needs_record(source, revision="rev1")
 
 
@@ -515,6 +520,102 @@ def test_fanout_failure_isolation(tmp_path: Path) -> None:
     fanout.execute(source, revision="rev1")
     edges = store.list_for_artifact(PROJECT, ArtifactRef(subject.reference))
     assert len(edges) == 1
+
+
+def test_catalogue_overflow_watermark_is_stable(tmp_path: Path) -> None:
+    tight = MatchLimits(
+        max_content_bytes=1_048_576,
+        max_mentions=100,
+        max_catalogue_entries=2,
+        max_compiled_pattern_size=65_536,
+    )
+    store, index, catalog, membership, _ = _harness(
+        tmp_path, _story("PROJ-123"), _story("PROJ-140")
+    )
+    match = MatchProjectReferences(
+        store,
+        index,
+        catalog,
+        project_ids_for=lambda ref: membership.get(
+            (ref.source_type, ref.source_id), ()
+        ),
+        matchers=(KeyMentionTagMatcher(),),
+        limits=tight,
+        rule_catalogue_version="software_delivery.matchers.v1",
+        context_relations=CONTEXT_RELATIONS,
+        now=lambda: "2026-11-26T12:00:00Z",
+    )
+    source_id = "gh/file.robot"
+    subject = ArtifactDescriptor(
+        reference=SourceReference(source_id, "github"),
+        revision="rev1",
+        kind=ArtifactKind.AUTOMATED_TEST,
+        contexts=(ContextAssignment("testing", "path_rule"),),
+    )
+    _register_subject(index, catalog, membership, subject)
+    source = _source(
+        source_id, "*** Test Cases ***\nX\n    [Tags]    PROJ-123\n"
+    )
+    match.execute(source, revision="rev1")
+    assert not match.needs_record(source, revision="rev1")
+    assert not match.needs_retry(subject.reference, revision="rev1")
+
+
+def test_api_operation_without_operation_id_resolves_via_raw_part_key(
+    tmp_path: Path,
+) -> None:
+    api = ArtifactDescriptor(
+        reference=SourceReference("gh/acme/openapi.yaml", "github"),
+        revision="spec1",
+        kind=ArtifactKind.API_SPEC,
+        contexts=(ContextAssignment("api_contract", "path_rule"),),
+        external_keys=("POST /orders/{orderId}/cancel",),
+        parts=(
+            ArtifactPart(
+                kind=ArtifactKind.API_OPERATION,
+                part_key="POST /orders/{orderId}/cancel",
+                operation_id=None,
+            ),
+        ),
+    )
+    store, index, catalog, membership, match = _harness(tmp_path, api)
+    membership[("github", api.reference.source_id)] = (PROJECT,)
+    frontend_id = "gh/acme/proj-web/lib/api/orders.ts"
+    frontend = ArtifactDescriptor(
+        reference=SourceReference(frontend_id, "github"),
+        revision="rev1",
+        kind=ArtifactKind.CODE_FILE,
+        contexts=(ContextAssignment("frontend", "path_rule"),),
+    )
+    _register_subject(index, catalog, membership, frontend)
+    content = (
+        "POST /orders/{orderId}/cancel\n"
+        'fetch(`/orders/${id}/cancel`, { method: "POST" })\n'
+    )
+    match.execute(_source(frontend_id, content), revision="rev1")
+    edges = store.list_for_artifact(PROJECT, ArtifactRef(frontend.reference))
+    assert len(edges) == 1
+    assert edges[0].object.part_key == "POST /orders/{orderId}/cancel"  # type: ignore[union-attr]
+
+
+def test_header_ignores_body_keys_in_first_forty_lines(tmp_path: Path) -> None:
+    store, index, catalog, membership, match = _harness(tmp_path, _story("PROJ-7"))
+    source_id = "gh/acme/proj/orders/handler.py"
+    subject = ArtifactDescriptor(
+        reference=SourceReference(source_id, "github"),
+        revision="rev1",
+        kind=ArtifactKind.CODE_FILE,
+        contexts=(ContextAssignment("backend", "path_rule"),),
+    )
+    _register_subject(index, catalog, membership, subject)
+    match.execute(
+        _source(
+            source_id,
+            'import os\n\n\ndef handler():\n    return lookup("PROJ-7")\n',
+        ),
+        revision="rev1",
+    )
+    assert store.list_for_artifact(PROJECT, ArtifactRef(subject.reference)) == ()
 
 
 def test_replace_preserves_provider_evidence_on_same_edge(tmp_path: Path) -> None:

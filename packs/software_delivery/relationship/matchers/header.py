@@ -19,7 +19,36 @@ RELATION_TYPE = "references"
 # Module docstring or leading block/line comments in the first ~40 lines.
 _HEADER_WINDOW_LINES = 40
 _DOCSTRING = re.compile(r'(?s)\A\s*[ruRU]?("""|\'\'\')(.*?)\1')
-_LEADING_COMMENTS = re.compile(r"(?m)^(?:\s*(?:#|//|/\*|\*).*)$")
+_LEADING_COMMENTS = re.compile(r"^\s*(?:#|//|/\*|\*)")
+
+
+def _leading_comment_region(content: str) -> tuple[str, int] | None:
+    """Return leading comment text and 1-based start line within the header window."""
+    lines = content.splitlines()[:_HEADER_WINDOW_LINES]
+    start = 0
+    doc = _DOCSTRING.match(content)
+    if doc is not None:
+        start = content[: doc.end()].count("\n")
+
+    collected: list[str] = []
+    start_line: int | None = None
+    saw_comment = False
+    for index in range(start, len(lines)):
+        line = lines[index]
+        line_no = index + 1
+        if not line.strip():
+            if saw_comment:
+                break
+            continue
+        if _LEADING_COMMENTS.match(line) is None:
+            break
+        if start_line is None:
+            start_line = line_no
+        collected.append(line)
+        saw_comment = True
+    if not collected or start_line is None:
+        return None
+    return ("\n".join(collected), start_line)
 
 
 class KeyMentionHeaderMatcher:
@@ -53,12 +82,13 @@ class KeyMentionHeaderMatcher:
         if key_re is None:
             return MatchOutcome()
 
-        header_text = "\n".join(content.splitlines()[:_HEADER_WINDOW_LINES])
         regions: list[tuple[str, int]] = []
         doc = _DOCSTRING.match(content)
         if doc is not None:
             regions.append((doc.group(2), 1))
-        regions.append((header_text, 1))
+        comments = _leading_comment_region(content)
+        if comments is not None:
+            regions.append(comments)
 
         mentions: list[MatchMention] = []
         seen: set[tuple[str, str]] = set()

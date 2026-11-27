@@ -55,6 +55,13 @@ class FanOutRelationshipRecorder:
         for child in self._recorders:
             child.clear_watermark(reference)
 
+    def invalidate_catalogue(self) -> None:
+        """Forward catalogue-cache invalidation to children that support it."""
+        for child in self._recorders:
+            invalidate = getattr(child, "invalidate_catalogue", None)
+            if callable(invalidate):
+                invalidate()
+
     def resolve_arriving(self, source: SourceDocument) -> None:
         for child in self._recorders:
             if not child.supports(source.reference):

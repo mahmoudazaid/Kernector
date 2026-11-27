@@ -48,7 +48,10 @@ def catalogue_fingerprint(
             item.method_path or "",
         ),
     ):
-        lines.append(f"op:{entry.operation_id or ''}|{entry.method_path or ''}")
+        lines.append(
+            f"op:{entry.operation_id or ''}|{entry.method_path or ''}|"
+            f"{entry.raw_part_key or ''}"
+        )
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
 
 
@@ -72,15 +75,27 @@ class ProjectCatalogueBuilder:
         self._index = index
         self._project_ids_for = project_ids_for
         self._limits = limits
+        self._by_project: dict[str, tuple[ArtifactDescriptor, ...]] | None = None
+        self._build_cache: dict[
+            str,
+            tuple[
+                ProjectKeyCatalogue,
+                tuple[ApiOperationCatalogueEntry, ...],
+                str | None,
+            ],
+        ] = {}
+
+    def invalidate(self) -> None:
+        """Drop cached scope/membership so the next build reloads the index."""
+        self._by_project = None
+        self._build_cache.clear()
 
     def descriptors_for_project(
         self, project_id: str
     ) -> tuple[ArtifactDescriptor, ...]:
-        found: list[ArtifactDescriptor] = []
-        for descriptor in self._index.list_for_scope():
-            if project_id in self._project_ids_for(descriptor.reference):
-                found.append(descriptor)
-        return tuple(found)
+        self._ensure_scope()
+        assert self._by_project is not None
+        return self._by_project.get(project_id, ())
 
     def build(
         self, project_id: str
@@ -90,9 +105,12 @@ class ProjectCatalogueBuilder:
         str | None,
     ]:
         """Return catalogues and an overflow diagnostic code when bounded out."""
+        cached = self._build_cache.get(project_id)
+        if cached is not None:
+            return cached
         keys: list[str] = []
         api_ops: list[ApiOperationCatalogueEntry] = []
-        seen_ops: set[tuple[str | None, str | None]] = set()
+        seen_ops: set[tuple[str | None, str | None, str | None]] = set()
         for descriptor in self.descriptors_for_project(project_id):
             for key in descriptor.external_keys:
                 if _KEY_PREFIX.fullmatch(key) is not None:
@@ -111,8 +129,13 @@ class ProjectCatalogueBuilder:
                     entry = ApiOperationCatalogueEntry(
                         operation_id=part.operation_id,
                         method_path=method_path,
+                        raw_part_key=part.part_key,
                     )
-                    token = (entry.operation_id, entry.method_path)
+                    token = (
+                        entry.operation_id,
+                        entry.method_path,
+                        entry.raw_part_key,
+                    )
                     if token in seen_ops:
                         continue
                     seen_ops.add(token)
@@ -122,13 +145,27 @@ class ProjectCatalogueBuilder:
         prefixes = derive_prefixes(unique_keys)
         total_entries = len(unique_keys) + len(prefixes) + len(api_ops)
         if total_entries > self._limits.max_catalogue_entries:
-            return (
+            result = (
                 ProjectKeyCatalogue(keys=(), prefixes=()),
                 (),
                 "catalogue_overflow",
             )
-        return (
-            ProjectKeyCatalogue(keys=unique_keys, prefixes=prefixes),
-            tuple(api_ops),
-            None,
-        )
+        else:
+            result = (
+                ProjectKeyCatalogue(keys=unique_keys, prefixes=prefixes),
+                tuple(api_ops),
+                None,
+            )
+        self._build_cache[project_id] = result
+        return result
+
+    def _ensure_scope(self) -> None:
+        if self._by_project is not None:
+            return
+        by_project: dict[str, list[ArtifactDescriptor]] = {}
+        for descriptor in self._index.list_for_scope():
+            for project_id in self._project_ids_for(descriptor.reference):
+                by_project.setdefault(project_id, []).append(descriptor)
+        self._by_project = {
+            project_id: tuple(items) for project_id, items in by_project.items()
+        }
