@@ -16,24 +16,38 @@ from packs.software_delivery.relationship.matchers.tag import _known_key_pattern
 RULE_ID = "key_mention.header"
 RELATION_TYPE = "references"
 
-# Module docstring or leading block/line comments in the first ~40 lines.
+# Leading comments are scanned only in the first ~40 lines. Module docstrings
+# that begin in that window are matched in full (closing quotes may fall later).
 _HEADER_WINDOW_LINES = 40
-_DOCSTRING = re.compile(r'(?s)[ruRU]?("""|\'\'\')(.*?)\1')
+_DOCSTRING = re.compile(r'(?s)[ \t]*[ruRU]?("""|\'\'\')(.*?)\1')
 _LEADING_COMMENTS = re.compile(r"^\s*(?:#|//|/\*|\*)")
+
+
+def _line_offset(content: str, line_index: int) -> int:
+    """Return the character offset of 0-based ``line_index`` in ``content``."""
+    if line_index <= 0:
+        return 0
+    position = 0
+    for _ in range(line_index):
+        newline = content.find("\n", position)
+        if newline < 0:
+            return len(content)
+        position = newline + 1
+    return position
 
 
 def _header_regions(content: str) -> list[tuple[str, int]]:
     """Return (text, 1-based start line) for leading comments and module docstring."""
-    lines = content.splitlines()[:_HEADER_WINDOW_LINES]
+    window_lines = content.splitlines()[:_HEADER_WINDOW_LINES]
     regions: list[tuple[str, int]] = []
     index = 0
-    if lines and lines[0].startswith("#!"):
+    if window_lines and window_lines[0].startswith("#!"):
         index = 1
 
     comment_lines: list[str] = []
     comment_start: int | None = None
-    while index < len(lines):
-        line = lines[index]
+    while index < len(window_lines):
+        line = window_lines[index]
         if not line.strip():
             if comment_lines:
                 break
@@ -49,12 +63,13 @@ def _header_regions(content: str) -> list[tuple[str, int]]:
     if comment_lines and comment_start is not None:
         regions.append(("\n".join(comment_lines), comment_start))
 
-    while index < len(lines) and not lines[index].strip():
+    while index < len(window_lines) and not window_lines[index].strip():
         index += 1
 
-    if index < len(lines):
-        remainder = "\n".join(lines[index:])
-        doc = _DOCSTRING.match(remainder)
+    if index < len(window_lines):
+        # Match against the full file from this line so a long docstring that
+        # closes after the header window is still recognised.
+        doc = _DOCSTRING.match(content, _line_offset(content, index))
         if doc is not None:
             regions.append((doc.group(2), index + 1))
 

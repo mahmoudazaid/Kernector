@@ -618,6 +618,25 @@ def test_header_ignores_body_keys_in_first_forty_lines(tmp_path: Path) -> None:
     assert store.list_for_artifact(PROJECT, ArtifactRef(subject.reference)) == ()
 
 
+def test_header_long_docstring_past_window_still_matches(tmp_path: Path) -> None:
+    store, index, catalog, membership, match = _harness(tmp_path, _story("PROJ-7"))
+    source_id = "gh/acme/proj/orders/long_doc.py"
+    subject = ArtifactDescriptor(
+        reference=SourceReference(source_id, "github"),
+        revision="rev1",
+        kind=ArtifactKind.CODE_FILE,
+        contexts=(ContextAssignment("backend", "path_rule"),),
+    )
+    _register_subject(index, catalog, membership, subject)
+    detail = "\n".join(f"detail line {i}" for i in range(45))
+    content = f'"""Cancel orders (PROJ-7).\n\n{detail}\n"""\nimport os\n'
+    match.execute(_source(source_id, content), revision="rev1")
+    edges = store.list_for_artifact(PROJECT, ArtifactRef(subject.reference))
+    assert len(edges) == 1
+    assert edges[0].evidence[0].extractor_id == "key_mention.header"
+    assert edges[0].evidence[0].locator == "line=1"
+
+
 def test_header_docstring_after_shebang_and_license_comments(tmp_path: Path) -> None:
     store, index, catalog, membership, match = _harness(tmp_path, _story("PROJ-7"))
     cases = [
