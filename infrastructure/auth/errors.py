@@ -11,3 +11,7 @@ class DuplicateUsernameError(AuthStoreError):
 
 class UserNotFoundError(AuthStoreError):
     """No user matched the lookup."""
+
+
+class MembershipRequiredError(AuthStoreError):
+    """Project grant requires an active workspace membership."""

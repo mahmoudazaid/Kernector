@@ -1,4 +1,4 @@
-"""Composition wiring for local user auth (#182)."""
+"""Composition wiring for local user auth (#182, #446)."""
 
 from __future__ import annotations
 
@@ -8,14 +8,20 @@ from pathlib import Path
 
 from application.auth.login import Login, LoginFailedError, LoginResult
 from application.errors import ConfigurationError
+from composition.auth.project_access import (
+    MembershipGrantProjectAccessPolicy,
+    _UnitOfWorkProjectLookup,
+    build_membership_grant_policy,
+)
+from composition.container import load_runtime_settings
 from domain.auth.csrf import csrf_tokens_match, derive_csrf_token
 from domain.auth.ports import AuthStore
 from domain.auth.principal import Principal
+from domain.project.access import ProjectAccessPolicy
 from infrastructure.auth.errors import AuthStoreError, DuplicateUsernameError
 from infrastructure.auth.models import StoredPreferences, StoredUser
 from infrastructure.auth.sql_store import SqlAuthStore
 from infrastructure.config import AuthSettings, Settings
-from composition.container import load_runtime_settings
 
 
 @lru_cache(maxsize=1)
@@ -125,18 +131,148 @@ def put_preferences(
     return store.put_preferences(user_id, provider=provider, model=model)
 
 
+def build_project_access_policy(
+    settings: Settings | None = None,
+) -> ProjectAccessPolicy:
+    """Return the membership-and-grant-backed project access policy (#446).
+
+    Does not wire HTTP/MCP callers; #447 owns trusted-context application.
+    """
+    from composition.container import _require_workspace_id
+    from composition.project.container import build_project_store
+
+    resolved = settings if settings is not None else load_runtime_settings()
+    store = build_auth_store(resolved)
+    project_store = build_project_store(resolved)
+    bound_workspace_id = _require_workspace_id(resolved)
+    return build_membership_grant_policy(
+        memberships=store,
+        grants=store,
+        projects=_UnitOfWorkProjectLookup(project_store),
+        bound_workspace_id=bound_workspace_id,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class WorkspaceAccessGrant:
+    """Result of an operator bootstrap grant (#446)."""
+
+    username: str
+    user_id: str
+    workspace_id: str
+    project_ids: tuple[str, ...]
+
+
+def grant_workspace_access(
+    *,
+    username: str,
+    project_ids: tuple[str, ...] | None = None,
+    all_existing_projects: bool = False,
+    settings: Settings | None = None,
+    auth_store: SqlAuthStore | None = None,
+    project_store: object | None = None,
+    workspace_id: str | None = None,
+) -> WorkspaceAccessGrant:
+    """Validate projects, then atomically grant membership and project grants.
+
+    Args:
+        username (str): Existing local username.
+        project_ids (tuple[str, ...] | None): Explicit project ids to grant.
+        all_existing_projects (bool): When True, grant the current workspace
+            project snapshot. Never implied by an omitted project list.
+        settings (Settings | None): Optional settings override.
+        auth_store (SqlAuthStore | None): Test seam for the auth SQLite store.
+        project_store (object | None): Test seam for the workspace project store.
+        workspace_id (str | None): Test seam for the bound workspace id.
+
+    Returns:
+        WorkspaceAccessGrant: Granted principal, workspace, and project ids.
+
+    Raises:
+        ConfigurationError: User missing, project selection empty/invalid,
+            a requested project does not exist in the bound workspace, or
+            auth/project store construction or access fails.
+    """
+    from composition.container import _require_workspace_id
+    from composition.project.container import build_project_store
+    from infrastructure.auth.errors import AuthStoreError, UserNotFoundError
+    from infrastructure.project.sql_store import ProjectStoreError
+
+    resolved = settings if settings is not None else load_runtime_settings()
+    try:
+        store = auth_store if auth_store is not None else build_auth_store(resolved)
+        projects = (
+            project_store
+            if project_store is not None
+            else build_project_store(resolved)
+        )
+        bound_workspace = (
+            workspace_id
+            if workspace_id is not None
+            else _require_workspace_id(resolved)
+        )
+
+        if all_existing_projects:
+            with projects.read() as tx:  # type: ignore[attr-defined]
+                selected = tuple(
+                    project.project_id for project in tx.projects.list()
+                )
+        else:
+            selected = tuple(project_ids or ())
+
+        if not selected:
+            raise ConfigurationError(
+                "provide --project-id values or --all-existing-projects "
+                "with at least one project in the workspace"
+            )
+
+        with projects.read() as tx:  # type: ignore[attr-defined]
+            missing = [
+                project_id
+                for project_id in selected
+                if tx.projects.get(project_id) is None
+            ]
+        if missing:
+            raise ConfigurationError("unknown project")
+
+        user = store.get_user_by_username(username.strip())
+        if user is None:
+            raise ConfigurationError("user not found")
+
+        store.grant_membership_with_projects(
+            user.user_id, bound_workspace, selected
+        )
+    except ConfigurationError:
+        raise
+    except UserNotFoundError as error:
+        raise ConfigurationError("user not found") from error
+    except (AuthStoreError, ProjectStoreError, ValueError, OSError) as error:
+        raise ConfigurationError(str(error)) from error
+
+    return WorkspaceAccessGrant(
+        username=user.username,
+        user_id=user.user_id,
+        workspace_id=bound_workspace,
+        project_ids=selected,
+    )
+
+
 __all__ = [
     "Login",
     "LoginFailedError",
     "LoginResult",
+    "MembershipGrantProjectAccessPolicy",
     "ResolvedSession",
+    "WorkspaceAccessGrant",
     "auth_settings",
     "build_auth_store",
     "build_login",
+    "build_project_access_policy",
     "clear_auth_store_cache",
     "create_local_user",
     "derive_session_csrf",
     "get_preferences",
+    "grant_workspace_access",
     "put_preferences",
     "require_csrf",
     "resolve_session",

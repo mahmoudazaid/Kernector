@@ -1,4 +1,4 @@
-"""SQLite store for local users, sessions, and preferences (#182)."""
+"""SQLite store for local users, sessions, preferences, and membership (#182, #446)."""
 
 from __future__ import annotations
 
@@ -10,10 +10,13 @@ from pathlib import Path
 from typing import Literal
 
 from domain.auth.models import (
+    MEMBER_ROLE,
     LoginAttemptState,
+    ProjectGrant,
     StoredPreferences,
     StoredSession,
     StoredUser,
+    WorkspaceMembership,
 )
 from domain.auth.passwords import hash_password, verify_password
 from domain.auth.principal import Principal, new_user_id
@@ -24,11 +27,13 @@ from domain.auth.sessions import (
 from infrastructure.auth.errors import (
     AuthStoreError,
     DuplicateUsernameError,
+    MembershipRequiredError,
     UserNotFoundError,
 )
 from infrastructure.catalog import _connection
 from infrastructure.catalog.errors import CatalogError
 from infrastructure.catalog.sql_schema import apply_migrations
+from infrastructure.catalog.workspace import require_workspace_id
 
 _MIGRATIONS = Path(__file__).resolve().parent / "migrations"
 _USERNAME_MAX_LEN = 64
@@ -429,10 +434,247 @@ class SqlAuthStore:
         clock = now or datetime.now(UTC)
         return clock < _parse_instant(state.locked_until)
 
+    def grant_membership(
+        self, principal_id: str, workspace_id: str
+    ) -> WorkspaceMembership:
+        """Ensure an active membership with opaque ``role="member"``."""
+        workspace_id = require_workspace_id(workspace_id)
+        if self.get_user(principal_id) is None:
+            raise UserNotFoundError("user not found")
+        now = _now()
+        with self._connect(write=True) as connection:
+            try:
+                connection.execute(
+                    "INSERT INTO auth_workspace_memberships ("
+                    "principal_id, workspace_id, role, status, created_at, updated_at"
+                    ") VALUES (?, ?, ?, 'active', ?, ?) "
+                    "ON CONFLICT(principal_id, workspace_id) DO UPDATE SET "
+                    "role = excluded.role, status = 'active', "
+                    "updated_at = excluded.updated_at",
+                    (principal_id, workspace_id, MEMBER_ROLE, now, now),
+                )
+            except sqlite3.Error as error:
+                raise AuthStoreError(
+                    f"could not grant membership at {self._path}"
+                ) from error
+        membership = self.get_membership(principal_id, workspace_id)
+        if membership is None:
+            raise AuthStoreError(
+                f"could not read membership after grant at {self._path}"
+            )
+        return membership
+
+    def get_membership(
+        self, principal_id: str, workspace_id: str
+    ) -> WorkspaceMembership | None:
+        """Return the membership row, or ``None`` when absent."""
+        workspace_id = require_workspace_id(workspace_id)
+        with self._connect() as connection:
+            try:
+                row = connection.execute(
+                    "SELECT principal_id, workspace_id, role, status "
+                    "FROM auth_workspace_memberships "
+                    "WHERE principal_id = ? AND workspace_id = ?",
+                    (principal_id, workspace_id),
+                ).fetchone()
+            except sqlite3.Error as error:
+                raise AuthStoreError(
+                    f"could not read membership at {self._path}"
+                ) from error
+        if row is None:
+            return None
+        return _membership_from_row(row)
+
+    def list_memberships(self, principal_id: str) -> tuple[WorkspaceMembership, ...]:
+        """Return every membership for *principal_id*."""
+        with self._connect() as connection:
+            try:
+                rows = connection.execute(
+                    "SELECT principal_id, workspace_id, role, status "
+                    "FROM auth_workspace_memberships "
+                    "WHERE principal_id = ? "
+                    "ORDER BY workspace_id COLLATE BINARY",
+                    (principal_id,),
+                ).fetchall()
+            except sqlite3.Error as error:
+                raise AuthStoreError(
+                    f"could not list memberships at {self._path}"
+                ) from error
+        return tuple(_membership_from_row(row) for row in rows)
+
+    def disable_membership(self, principal_id: str, workspace_id: str) -> bool:
+        """Mark membership disabled. Return whether a row was updated."""
+        return self._set_membership_status(principal_id, workspace_id, "disabled")
+
+    def revoke_membership(self, principal_id: str, workspace_id: str) -> bool:
+        """Mark membership revoked. Return whether a row was updated."""
+        return self._set_membership_status(principal_id, workspace_id, "revoked")
+
+    def grant_membership_with_projects(
+        self,
+        principal_id: str,
+        workspace_id: str,
+        project_ids: tuple[str, ...],
+    ) -> tuple[WorkspaceMembership, tuple[ProjectGrant, ...]]:
+        """Atomically ensure active membership and active grants for *project_ids*.
+
+        Callers must validate that every project exists in the bound workspace
+        before invoking this method. Raises ``UserNotFoundError`` when the
+        principal is missing.
+        """
+        workspace_id = require_workspace_id(workspace_id)
+        if self.get_user(principal_id) is None:
+            raise UserNotFoundError("user not found")
+        cleaned: list[str] = []
+        for project_id in project_ids:
+            value = project_id.strip()
+            if not value:
+                raise AuthStoreError("project_id is required")
+            cleaned.append(value)
+        if not cleaned:
+            raise AuthStoreError("project_id is required")
+        now = _now()
+        with self._connect(write=True) as connection:
+            try:
+                connection.execute(
+                    "INSERT INTO auth_workspace_memberships ("
+                    "principal_id, workspace_id, role, status, created_at, updated_at"
+                    ") VALUES (?, ?, ?, 'active', ?, ?) "
+                    "ON CONFLICT(principal_id, workspace_id) DO UPDATE SET "
+                    "role = excluded.role, status = 'active', "
+                    "updated_at = excluded.updated_at",
+                    (principal_id, workspace_id, MEMBER_ROLE, now, now),
+                )
+                for project_id in cleaned:
+                    connection.execute(
+                        "INSERT INTO auth_project_grants ("
+                        "principal_id, workspace_id, project_id, status, "
+                        "created_at, updated_at"
+                        ") VALUES (?, ?, ?, 'active', ?, ?) "
+                        "ON CONFLICT(principal_id, workspace_id, project_id) "
+                        "DO UPDATE SET status = 'active', "
+                        "updated_at = excluded.updated_at",
+                        (principal_id, workspace_id, project_id, now, now),
+                    )
+            except sqlite3.Error as error:
+                raise AuthStoreError(
+                    f"could not grant workspace access at {self._path}"
+                ) from error
+        membership = self.get_membership(principal_id, workspace_id)
+        if membership is None:
+            raise AuthStoreError(
+                f"could not read membership after grant at {self._path}"
+            )
+        grants = tuple(
+            grant
+            for grant in self.list_project_grants(principal_id, workspace_id)
+            if grant.project_id in cleaned and grant.status == "active"
+        )
+        return membership, grants
+
+    def grant_project(
+        self, principal_id: str, workspace_id: str, project_id: str
+    ) -> ProjectGrant:
+        """Ensure an active project grant under an active membership."""
+        workspace_id = require_workspace_id(workspace_id)
+        project_id = project_id.strip()
+        if not project_id:
+            raise AuthStoreError("project_id is required")
+        membership = self.get_membership(principal_id, workspace_id)
+        if membership is None or membership.status != "active":
+            raise MembershipRequiredError("active membership required")
+        now = _now()
+        with self._connect(write=True) as connection:
+            try:
+                connection.execute(
+                    "INSERT INTO auth_project_grants ("
+                    "principal_id, workspace_id, project_id, status, "
+                    "created_at, updated_at"
+                    ") VALUES (?, ?, ?, 'active', ?, ?) "
+                    "ON CONFLICT(principal_id, workspace_id, project_id) DO UPDATE SET "
+                    "status = 'active', updated_at = excluded.updated_at",
+                    (principal_id, workspace_id, project_id, now, now),
+                )
+            except sqlite3.IntegrityError as error:
+                raise MembershipRequiredError(
+                    "active membership required"
+                ) from error
+            except sqlite3.Error as error:
+                raise AuthStoreError(
+                    f"could not grant project at {self._path}"
+                ) from error
+        grants = self.list_project_grants(principal_id, workspace_id)
+        for grant in grants:
+            if grant.project_id == project_id:
+                return grant
+        raise AuthStoreError(
+            f"could not read project grant after write at {self._path}"
+        )
+
+    def list_project_grants(
+        self, principal_id: str, workspace_id: str
+    ) -> tuple[ProjectGrant, ...]:
+        """Return project grants for one principal in one workspace."""
+        workspace_id = require_workspace_id(workspace_id)
+        with self._connect() as connection:
+            try:
+                rows = connection.execute(
+                    "SELECT principal_id, workspace_id, project_id, status "
+                    "FROM auth_project_grants "
+                    "WHERE principal_id = ? AND workspace_id = ? "
+                    "ORDER BY project_id COLLATE BINARY",
+                    (principal_id, workspace_id),
+                ).fetchall()
+            except sqlite3.Error as error:
+                raise AuthStoreError(
+                    f"could not list project grants at {self._path}"
+                ) from error
+        return tuple(_project_grant_from_row(row) for row in rows)
+
+    def revoke_project_grant(
+        self, principal_id: str, workspace_id: str, project_id: str
+    ) -> bool:
+        """Mark the grant revoked. Return whether a row was updated."""
+        workspace_id = require_workspace_id(workspace_id)
+        now = _now()
+        with self._connect(write=True) as connection:
+            try:
+                cursor = connection.execute(
+                    "UPDATE auth_project_grants "
+                    "SET status = 'revoked', updated_at = ? "
+                    "WHERE principal_id = ? AND workspace_id = ? AND project_id = ?",
+                    (now, principal_id, workspace_id, project_id),
+                )
+            except sqlite3.Error as error:
+                raise AuthStoreError(
+                    f"could not revoke project grant at {self._path}"
+                ) from error
+            return cursor.rowcount > 0
+
+    def _set_membership_status(
+        self, principal_id: str, workspace_id: str, status: str
+    ) -> bool:
+        workspace_id = require_workspace_id(workspace_id)
+        now = _now()
+        with self._connect(write=True) as connection:
+            try:
+                cursor = connection.execute(
+                    "UPDATE auth_workspace_memberships "
+                    "SET status = ?, updated_at = ? "
+                    "WHERE principal_id = ? AND workspace_id = ?",
+                    (status, now, principal_id, workspace_id),
+                )
+            except sqlite3.Error as error:
+                raise AuthStoreError(
+                    f"could not update membership at {self._path}"
+                ) from error
+            return cursor.rowcount > 0
+
     @contextmanager
     def _connect(self, *, write: bool = False) -> Iterator[sqlite3.Connection]:
         try:
             connection = _connection.connect(self._path)
+            connection.execute("PRAGMA foreign_keys = ON")
         except sqlite3.Error as error:
             raise AuthStoreError(
                 f"could not open auth store at {self._path}"
@@ -482,4 +724,22 @@ def _session_from_row(row: sqlite3.Row) -> StoredSession:
         expires_at=row["expires_at"],
         created_at=row["created_at"],
         revoked_at=row["revoked_at"],
+    )
+
+
+def _membership_from_row(row: sqlite3.Row) -> WorkspaceMembership:
+    return WorkspaceMembership(
+        principal_id=row["principal_id"],
+        workspace_id=row["workspace_id"],
+        role=row["role"],
+        status=row["status"],
+    )
+
+
+def _project_grant_from_row(row: sqlite3.Row) -> ProjectGrant:
+    return ProjectGrant(
+        principal_id=row["principal_id"],
+        workspace_id=row["workspace_id"],
+        project_id=row["project_id"],
+        status=row["status"],
     )

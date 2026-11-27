@@ -16,7 +16,7 @@ class Principal:
     """Server-side authenticated actor.
 
     ``user_id`` is immutable and stable across sessions for the same account
-    so later workspace membership (#446) can key on it.
+    so workspace membership and project grants (#446) can key on it.
     """
 
     user_id: str

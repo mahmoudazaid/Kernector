@@ -85,7 +85,7 @@ See [ADR 0005](docs/adr/0005-consolidate-runtime-contract-on-settings.md) for
 why `/api/v1/settings` owns client bootstrap state and why `/capabilities` was
 retired.
 
-### Local user auth (#182)
+### Local user auth (#182) and workspace access (#446)
 
 Provision accounts with the CLI only (no HTTP register, no `--password` flag):
 
@@ -93,11 +93,28 @@ Provision accounts with the CLI only (no HTTP register, no `--password` flag):
 uv run python -m presentation.cli.create_user --username alice
 ```
 
+Grant workspace membership plus **explicit** project access (single-host
+`auth.sqlite`; requires `DOCUMENT_CATALOG_WORKSPACE_ID` and existing projects):
+
+```bash
+uv run python -m presentation.cli.grant_workspace_access \
+  --username alice --project-id prj_one --project-id prj_two
+
+# Or snapshot every project present in the bound workspace right now:
+uv run python -m presentation.cli.grant_workspace_access \
+  --username alice --all-existing-projects
+```
+
+Omitting both `--project-id` and `--all-existing-projects` is an error — it
+never means access to every project. Active membership alone does not grant
+projects; each grant is stored explicitly (#446). Permission/RBAC evaluation
+is #456; applying the policy on HTTP/MCP routes is #447.
+
 Sign in at `/login`. Auth and preferences go through the Next.js same-origin
 BFF (`/api/v1/auth/*`, `/api/v1/me/preferences`). See
 [ADR 0013](docs/adr/0013-local-user-auth-and-preferences.md). The Hub requires
 a session for every product page (browser gate only — FastAPI product routes
-still accept anonymous calls). Workspace membership is #446.
+still accept anonymous calls until #447).
 
 ### Run the MCP Streamable HTTP server
 
