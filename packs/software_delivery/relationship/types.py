@@ -11,4 +11,8 @@ RELATION_INVERSE_NAMES: Mapping[str, str] = {
     "child_of": "parent_of",
     "relates_to": "relates_to",
     "affects": "affected_by",
+    "automates": "automated_by",
+    "references": "referenced_by",
+    "describes": "described_by",
+    "exercises": "exercised_by",
 }

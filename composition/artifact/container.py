@@ -7,6 +7,7 @@ from pathlib import Path
 
 from application.artifact.lookup import LookupArtifacts
 from application.artifact.sync import SyncArtifactDescriptors
+from application.errors import ConfigurationError
 from domain.artifact.models import ArtifactDescriptor
 from domain.artifact.ports import ArtifactDescriptorExtractor
 from domain.knowledge import SourceDocument, SourceReference
@@ -29,6 +30,16 @@ from composition.project.container import (
 )
 
 
+def _require_catalog_sql_path(settings: Settings) -> Path:
+    path = settings.document_catalog.sql_path
+    if path is None:
+        raise ConfigurationError(
+            "DOCUMENT_CATALOG_SQL_PATH is blank; unset it to use the "
+            "data/catalog/catalog.sqlite default"
+        )
+    return path
+
+
 class CompositeArtifactDescriptorExtractor:
     """Try connector-specific extractors in order; first hit wins."""
 
@@ -44,8 +55,12 @@ class CompositeArtifactDescriptorExtractor:
 
 
 def build_artifact_index(settings: Settings) -> SqlArtifactIndex:
-    path = Path(settings.document_catalog.sql_path)
-    return SqlArtifactIndex(path, settings.document_catalog.workspace_id)
+    from composition.container import _require_workspace_id
+
+    return SqlArtifactIndex(
+        _require_catalog_sql_path(settings),
+        _require_workspace_id(settings),
+    )
 
 
 def build_artifact_extractor() -> CompositeArtifactDescriptorExtractor:
@@ -59,9 +74,12 @@ def build_artifact_extractor() -> CompositeArtifactDescriptorExtractor:
 
 
 def build_lookup_artifacts(settings: Settings) -> LookupArtifacts:
-    path = Path(settings.document_catalog.sql_path)
-    workspace_id = settings.document_catalog.workspace_id
-    catalog = SqlDocumentCatalog(path, workspace_id)
+    from composition.container import _require_workspace_id
+
+    catalog = SqlDocumentCatalog(
+        _require_catalog_sql_path(settings),
+        _require_workspace_id(settings),
+    )
     resolve = build_resolve_projects_for_source(settings)
     return LookupArtifacts(
         build_artifact_index(settings),
@@ -109,7 +127,7 @@ def build_artifact_sync(settings: Settings) -> SyncArtifactDescriptors:
         rules = SOFTWARE_DELIVERY_CONTEXT_RULES
         facts_for = structural_facts_for
 
-    from composition.relationship.container import build_record_explicit_relationships
+    from composition.relationship.container import build_relationship_recorders
 
     return SyncArtifactDescriptors(
         build_artifact_extractor(),
@@ -118,5 +136,5 @@ def build_artifact_sync(settings: Settings) -> SyncArtifactDescriptors:
         rules=rules,
         facts_for=facts_for,
         component_ids_for=component_ids_for,
-        relationships=build_record_explicit_relationships(settings),
+        relationships=build_relationship_recorders(settings),
     )

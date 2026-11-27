@@ -22,7 +22,11 @@ from domain.relationship.models import (
     ProviderLink,
     UnresolvedKey,
 )
-from domain.relationship.ports import ExplicitLinkExtractor, RelationshipStore
+from domain.relationship.ports import (
+    WATERMARK_KIND_PROVIDER_DECLARED,
+    ExplicitLinkExtractor,
+    RelationshipStore,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -155,8 +159,10 @@ class RecordExplicitRelationships:
         return self._store.get_record_watermark(reference) is None
 
     def clear_watermark(self, reference: SourceReference) -> None:
-        """Drop the watermark so a returning artifact re-records."""
-        self._store.clear_record_watermark(reference)
+        """Drop the provider-declared watermark so a returning artifact re-records."""
+        self._store.clear_record_watermark(
+            reference, kind=WATERMARK_KIND_PROVIDER_DECLARED
+        )
 
     def supports(self, reference: SourceReference) -> bool:
         """Return whether an extractor is registered for ``reference``."""
