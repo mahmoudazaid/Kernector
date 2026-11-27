@@ -128,10 +128,11 @@ export async function revokeMcpProfile(
 }
 
 /**
- * Cursor mcp.json snippet: Streamable HTTP + bearer.
- * Omit `type` — Cursor treats entries without type as HTTP when `url` is set.
- * Do not register the same server in both user and project mcp.json —
- * dual createClient races cancel each other in Cursor.
+ * Shared mcp.json snippet for Cursor and Claude Code (Streamable HTTP + bearer).
+ * The Admin token callout shows this once — do not ship a second client-specific
+ * JSON block in the UI. Omit `type`; Cursor treats `url` as HTTP, and Claude Code
+ * accepts the same shape. Do not register the same server in both user and
+ * project mcp.json — dual createClient races cancel each other in Cursor.
  */
 export function mcpClientConfig(endpoint: string, token: string): string {
   return JSON.stringify(
@@ -151,8 +152,9 @@ export function mcpClientConfig(endpoint: string, token: string): string {
 }
 
 /**
- * Claude Code `.mcp.json` snippet. Requires `"type": "http"` when `url` is set;
- * without it Claude Code skips the server as misconfigured.
+ * @deprecated Prefer {@link mcpClientConfig}. Kept for callers that still want
+ * an explicit `"type": "http"`; the Admin UI must not show this as a second
+ * snippet next to {@link mcpClientConfig}.
  */
 export function claudeCodeMcpConfig(endpoint: string, token: string): string {
   return JSON.stringify(
