@@ -75,7 +75,7 @@ def test_chat_provider_failure_is_provider_error_without_vendor_text() -> None:
         chat.complete("system", (Message(role="user", content="hi"),), {})
 
     assert "sk-leaked" not in str(raised.value)
-    assert raised.value.__cause__ is not None
+    assert raised.value.__cause__ is None
 
 
 def test_embedding_provider_failure_is_provider_error_without_vendor_text() -> None:

@@ -76,7 +76,13 @@ def test_get_runtime_settings_assembles_catalog_from_defaults_and_domain() -> No
     assert temperature.min_value == 0.0
     assert temperature.max_value == 2.0
     assert temperature.step == 0.1
-    assert temperature.providers == ("openrouter", "ollama")
+    assert temperature.providers == (
+        "openrouter",
+        "openai",
+        "anthropic",
+        "gemini",
+        "ollama",
+    )
 
 
 def test_get_runtime_settings_allows_null_optional_defaults() -> None:

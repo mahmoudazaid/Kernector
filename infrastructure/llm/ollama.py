@@ -87,9 +87,9 @@ class OllamaChat:
         except requests.exceptions.RequestException as exc:
             raise classify_provider_failure(
                 exc, fallback_message=_CONNECTION_FAILURE_MESSAGE
-            ) from exc
-        except (KeyError, IndexError, ValueError) as exc:
-            raise ProviderError(_PARSE_FAILURE_MESSAGE) from exc
+            ) from None
+        except (KeyError, IndexError, ValueError):
+            raise ProviderError(_PARSE_FAILURE_MESSAGE) from None
 
         return AskResult(
             content=content,

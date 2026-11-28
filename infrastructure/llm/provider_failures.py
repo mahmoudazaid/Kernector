@@ -1,9 +1,9 @@
 """Classify LLM provider transport/API failures into typed domain errors.
 
 Adapters call :func:`classify_provider_failure` on invoke/transport failures
-and raise the result with ``from error`` so vendor detail stays on
-``__cause__``. Exception text is always adapter-authored; never copy vendor
-bodies, headers, or secrets into the returned message.
+and raise the result with ``from None`` so unsafe vendor exceptions are not
+retained as ``__cause__``. Exception text is always adapter-authored; never
+copy vendor bodies, headers, or secrets into the returned message.
 """
 
 from __future__ import annotations
@@ -66,7 +66,8 @@ def classify_provider_failure(
 
     Returns:
         A new ``ProviderError`` (possibly a subclass) with fixed text. Callers
-        must ``raise ... from error`` to retain the vendor cause.
+        must ``raise ... from None`` so vendor exceptions (and any secrets in
+        them) are not retained on ``__cause__``.
     """
     for exc in _exception_chain(error):
         classified = _classify_one(exc)

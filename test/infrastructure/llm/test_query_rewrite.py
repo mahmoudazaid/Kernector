@@ -88,8 +88,7 @@ def test_invocation_failure_raises_provider_error() -> None:
 
     assert not isinstance(raised.value, QueryRewriterError)
     assert "upstream down" not in str(raised.value)
-    assert isinstance(raised.value.__cause__, RuntimeError)
-    assert raised.value.__cause__ is fake._error
+    assert raised.value.__cause__ is None
 
 
 def test_invocation_auth_failure_raises_provider_auth_error() -> None:
@@ -107,7 +106,8 @@ def test_invocation_auth_failure_raises_provider_auth_error() -> None:
         rewriter.rewrite("what broke?")
 
     assert "sk-secret" not in str(raised.value)
-    assert raised.value.__cause__ is upstream
+    assert "sk-secret" not in repr(raised.value)
+    assert raised.value.__cause__ is None
 
 
 def test_invocation_rate_limit_raises_provider_rate_limit_error() -> None:
@@ -125,7 +125,8 @@ def test_invocation_rate_limit_raises_provider_rate_limit_error() -> None:
         rewriter.rewrite("what broke?")
 
     assert "sk-secret" not in str(raised.value)
-    assert raised.value.__cause__ is upstream
+    assert "sk-secret" not in repr(raised.value)
+    assert raised.value.__cause__ is None
 
 
 @pytest.mark.parametrize("blank", ["", "   ", "\n\t"])
