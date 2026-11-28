@@ -15,7 +15,7 @@ from composition.sqlite_migrate import (
     prune_sqlite_backups,
     run_sqlite_migrations,
 )
-from infrastructure.catalog.sql_schema import apply_migrations, current_schema_version
+from infrastructure.catalog.sql_schema import current_schema_version
 from infrastructure.config import Settings
 
 
