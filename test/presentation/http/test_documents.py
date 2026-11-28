@@ -16,6 +16,8 @@ from composition.errors import (
     PartialDocumentOperationError,
     UnknownUploadedDocumentError,
 )
+from domain.auth.principal import Principal
+from domain.project.access import ProjectAccessCaller
 from domain.knowledge import (
     CatalogDocument,
     CatalogStatus,
@@ -662,7 +664,13 @@ def test_document_operations_resolve_catalog_lazily(
         raise DocumentOperationError("catalog unavailable")
 
     monkeypatch.setattr(http_deps, "get_document_catalog", boom)
-    ops = http_deps.get_document_operations(SimpleNamespace(max_upload_bytes=1))
+    ops = http_deps.get_document_operations(
+        SimpleNamespace(max_upload_bytes=1),
+        _caller=ProjectAccessCaller(
+            principal=Principal(user_id="usr_test", username="test"),
+            workspace_id="test-workspace",
+        ),
+    )
     assert calls == []
     with pytest.raises(DocumentOperationError, match="catalog unavailable"):
         ops.list()
@@ -696,7 +704,13 @@ def test_document_operations_reuse_the_process_catalog(
     monkeypatch.setattr(http_deps, "replace_uploaded_document", record("replace"))
     monkeypatch.setattr(http_deps, "delete_uploaded_document", record("delete"))
     monkeypatch.setattr(http_deps, "get_uploaded_document_content", record("content"))
-    ops = http_deps.get_document_operations(SimpleNamespace(max_upload_bytes=1))
+    ops = http_deps.get_document_operations(
+        SimpleNamespace(max_upload_bytes=1),
+        _caller=ProjectAccessCaller(
+            principal=Principal(user_id="usr_test", username="test"),
+            workspace_id="test-workspace",
+        ),
+    )
     ops.list()
     ops.list_chunks(object())
     ops.create(object())

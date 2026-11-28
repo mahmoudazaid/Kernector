@@ -1,4 +1,4 @@
-"""HTTP contract for project artifact relationships (#374)."""
+"""HTTP contract for project artifact relationships (#374 / #447)."""
 
 from __future__ import annotations
 
@@ -15,7 +15,9 @@ from domain.artifact.models import (
     ArtifactRef,
     ContextAssignment,
 )
+from domain.auth.principal import Principal
 from domain.knowledge import SourceReference, SourceType
+from domain.project.access import ProjectAccessCaller
 from domain.relationship.models import (
     ORIGIN_PROVIDER_DECLARED,
     VERIFICATION_VERIFIED,
@@ -24,10 +26,22 @@ from domain.relationship.models import (
 from infrastructure.artifact.sql_index import SqlArtifactIndex
 from infrastructure.relationship.sql_store import SqlRelationshipStore
 from presentation.http.app import create_app
-from presentation.http.deps import get_list_artifact_relationships
+from presentation.http.deps import (
+    get_list_artifact_relationships,
+    get_project_access_policy,
+    get_trusted_caller,
+)
 
 _PROBLEM = "application/problem+json"
 _PROJECT = "prj_orders"
+
+
+class _AllowProjectPolicy:
+    def can_read(self, caller: ProjectAccessCaller, project_id: str) -> bool:
+        return project_id == _PROJECT
+
+    def readable_projects(self, caller: ProjectAccessCaller) -> tuple[str, ...]:
+        return (_PROJECT,)
 
 
 def _descriptor(
@@ -63,6 +77,11 @@ def _client(
         inverse_names={"tests": "tested_by"},
     )
     app = create_app(cors_origins=())
+    app.dependency_overrides[get_trusted_caller] = lambda: ProjectAccessCaller(
+        principal=Principal(user_id="usr_test", username="test"),
+        workspace_id="test-workspace",
+    )
+    app.dependency_overrides[get_project_access_policy] = lambda: _AllowProjectPolicy()
     app.dependency_overrides[get_list_artifact_relationships] = lambda: use_case
     return TestClient(app, raise_server_exceptions=False), store, index
 
@@ -143,4 +162,4 @@ def test_unknown_key_and_project_return_problem_json(tmp_path: Path) -> None:
     )
     assert missing_project.status_code == 404, missing_project.text
     assert missing_project.headers["content-type"].startswith(_PROBLEM)
-    assert missing_project.json()["code"] == "project_not_found"
+    assert missing_project.json()["code"] == "not_found"

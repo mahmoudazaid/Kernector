@@ -48,6 +48,9 @@ def _from_row(row: sqlite3.Row) -> McpAccessProfile:
     allowlist_raw = json.loads(row["allowlist"])
     keys = row.keys()
     description = row["description"] if "description" in keys else ""
+    user_id = row["user_id"] if "user_id" in keys else None
+    if isinstance(user_id, str) and not user_id.strip():
+        user_id = None
     return McpAccessProfile(
         profile_id=row["profile_id"],
         workspace_id=row["workspace_id"],
@@ -62,6 +65,7 @@ def _from_row(row: sqlite3.Row) -> McpAccessProfile:
         description=description or "",
         disabled_at=row["disabled_at"],
         revoked_at=row["revoked_at"],
+        user_id=user_id,
     )
 
 
@@ -87,12 +91,16 @@ class SqlMcpAccessProfileStore:
             raise McpAccessProfileStoreError("workspace_id mismatch")
         with self._connect(write=True) as connection:
             try:
+                if not profile.user_id or not str(profile.user_id).strip():
+                    raise McpAccessProfileStoreError(
+                        "user_id is required for new access profiles"
+                    )
                 connection.execute(
                     "INSERT INTO mcp_access_profiles ("
                     "workspace_id, profile_id, project_id, name, token_hash, "
                     "allowlist, status, expires_at, disabled_at, revoked_at, "
-                    "created_at, updated_at, description"
-                    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "created_at, updated_at, description, user_id"
+                    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         self._workspace_id,
                         profile.profile_id,
@@ -107,6 +115,7 @@ class SqlMcpAccessProfileStore:
                         profile.created_at,
                         profile.updated_at,
                         profile.description,
+                        profile.user_id,
                     ),
                 )
             except sqlite3.IntegrityError as error:
@@ -139,7 +148,8 @@ class SqlMcpAccessProfileStore:
             cursor = connection.execute(
                 "UPDATE mcp_access_profiles SET project_id = ?, name = ?, "
                 "token_hash = ?, allowlist = ?, status = ?, expires_at = ?, "
-                "disabled_at = ?, revoked_at = ?, updated_at = ?, description = ? "
+                "disabled_at = ?, revoked_at = ?, updated_at = ?, description = ?, "
+                "user_id = ? "
                 "WHERE workspace_id = ? AND profile_id = ?",
                 (
                     profile.project_id,
@@ -152,6 +162,7 @@ class SqlMcpAccessProfileStore:
                     profile.revoked_at,
                     profile.updated_at,
                     profile.description,
+                    profile.user_id,
                     self._workspace_id,
                     profile.profile_id,
                 ),

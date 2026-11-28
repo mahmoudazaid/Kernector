@@ -123,7 +123,13 @@ def _expires_at(expires_in: int | None) -> float | None:
     return None if expires_in is None else time.time() + expires_in
 
 
-def start_jira_oauth(settings: Settings, *, state_store=None) -> str:
+def start_jira_oauth(
+    settings: Settings,
+    *,
+    user_id: str,
+    workspace_id: str,
+    state_store=None,
+) -> str:
     """Issue CSRF state and return Atlassian's authorization URL."""
     _reject_in_data_center(settings)
     if not _jira_oauth_ready(settings):
@@ -131,7 +137,10 @@ def start_jira_oauth(settings: Settings, *, state_store=None) -> str:
     from infrastructure.connectors.jira.oauth import authorization_url
 
     store = state_store if state_store is not None else _state_store(settings)
-    return authorization_url(settings.jira_oauth, state=store.issue())
+    return authorization_url(
+        settings.jira_oauth,
+        state=store.issue(user_id=user_id, workspace_id=workspace_id),
+    )
 
 
 def complete_jira_oauth(
@@ -140,6 +149,8 @@ def complete_jira_oauth(
     state: str | None,
     code: str | None,
     error: str | None,
+    user_id: str,
+    workspace_id: str,
     state_store=None,
     connection_store=None,
     gateway=None,
@@ -154,7 +165,7 @@ def complete_jira_oauth(
     if error == "access_denied":
         return _hub_redirect(settings, result="denied")
     states = state_store if state_store is not None else _state_store(settings)
-    if not states.consume(state):
+    if not states.consume(state, user_id=user_id, workspace_id=workspace_id):
         return _hub_redirect(settings, result="invalid_state")
     if error or not code or not _jira_oauth_ready(settings):
         return _hub_redirect(settings, result="error")

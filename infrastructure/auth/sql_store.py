@@ -174,8 +174,9 @@ class SqlAuthStore:
             try:
                 connection.execute(
                     "INSERT INTO auth_sessions ("
-                    "session_id_hash, user_id, expires_at, revoked_at, created_at"
-                    ") VALUES (?, ?, ?, NULL, ?)",
+                    "session_id_hash, user_id, expires_at, revoked_at, created_at, "
+                    "selected_workspace_id"
+                    ") VALUES (?, ?, ?, NULL, ?, NULL)",
                     (session_hash, user_id, expires_at, created_at),
                 )
             except sqlite3.Error as error:
@@ -188,6 +189,7 @@ class SqlAuthStore:
             expires_at=expires_at,
             created_at=created_at,
             revoked_at=None,
+            selected_workspace_id=None,
         )
 
     def get_session(
@@ -201,7 +203,8 @@ class SqlAuthStore:
         with self._connect() as connection:
             try:
                 row = connection.execute(
-                    "SELECT session_id_hash, user_id, expires_at, revoked_at, created_at "
+                    "SELECT session_id_hash, user_id, expires_at, revoked_at, created_at, "
+                    "selected_workspace_id "
                     "FROM auth_sessions WHERE session_id_hash = ?",
                     (digest,),
                 ).fetchone()
@@ -218,6 +221,24 @@ class SqlAuthStore:
         if clock >= _parse_instant(session.expires_at):
             return None
         return session
+
+    def set_session_selected_workspace(
+        self, session_id: str, workspace_id: str | None
+    ) -> bool:
+        """Persist membership-validated workspace selection on the session."""
+        digest = hash_session_id(session_id)
+        with self._connect(write=True) as connection:
+            try:
+                cursor = connection.execute(
+                    "UPDATE auth_sessions SET selected_workspace_id = ? "
+                    "WHERE session_id_hash = ? AND revoked_at IS NULL",
+                    (workspace_id, digest),
+                )
+            except sqlite3.Error as error:
+                raise AuthStoreError(
+                    f"could not update session workspace at {self._path}"
+                ) from error
+        return cursor.rowcount > 0
 
     def revoke_session(self, session_id: str, *, now: datetime | None = None) -> bool:
         """Mark a session revoked. Return whether a row was updated."""
@@ -718,12 +739,17 @@ def _user_from_row(row: sqlite3.Row) -> StoredUser:
 
 
 def _session_from_row(row: sqlite3.Row) -> StoredSession:
+    keys = set(row.keys())
+    selected = (
+        row["selected_workspace_id"] if "selected_workspace_id" in keys else None
+    )
     return StoredSession(
         session_id_hash=row["session_id_hash"],
         user_id=row["user_id"],
         expires_at=row["expires_at"],
         created_at=row["created_at"],
         revoked_at=row["revoked_at"],
+        selected_workspace_id=selected,
     )
 
 

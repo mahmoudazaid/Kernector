@@ -628,9 +628,13 @@
           "project_id": {
             "title": "Project Id",
             "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
           }
         },
-        "required": ["project_id", "name"],
+        "required": ["project_id", "name", "user_id"],
         "title": "CreateMcpAccessProfileBody",
         "type": "object"
       },
@@ -2340,6 +2344,17 @@
           "updated_at": {
             "title": "Updated At",
             "type": "string"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
           }
         },
         "required": [
@@ -4269,6 +4284,30 @@
         "required": ["loc", "msg", "type"],
         "title": "ValidationError",
         "type": "object"
+      },
+      "WorkspaceSelectionResponse": {
+        "properties": {
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": ["workspace_id"],
+        "title": "WorkspaceSelectionResponse",
+        "type": "object"
+      },
+      "WorkspaceSelectionUpdate": {
+        "properties": {
+          "workspace_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": ["workspace_id"],
+        "title": "WorkspaceSelectionUpdate",
+        "type": "object"
       }
     }
   },
@@ -5344,6 +5383,26 @@
               }
             },
             "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
           },
           "404": {
             "content": {
@@ -8135,6 +8194,94 @@
         "tags": ["preferences"]
       }
     },
+    "/api/v1/me/workspace": {
+      "put": {
+        "description": "Persist a membership-validated workspace selection on the session (#447).",
+        "operationId": "put_workspace_selection_api_v1_me_workspace_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceSelectionUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceSelectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Server error"
+          }
+        },
+        "summary": "Put Workspace Selection",
+        "tags": ["preferences"]
+      }
+    },
     "/api/v1/ollama/status": {
       "get": {
         "description": "Probe the configured Ollama base URL (never a client-supplied target).",
@@ -8187,7 +8334,7 @@
     },
     "/api/v1/projects": {
       "get": {
-        "description": "List the bound workspace's projects.",
+        "description": "List projects the trusted caller may read in the bound workspace.",
         "operationId": "list_projects_api_v1_projects_get",
         "responses": {
           "200": {
@@ -8204,6 +8351,26 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          },
           "500": {
             "content": {
               "application/problem+json": {
@@ -8219,7 +8386,7 @@
         "tags": ["projects"]
       },
       "post": {
-        "description": "Create a project in the bound workspace.",
+        "description": "Create a project in the trusted workspace and grant the caller access.",
         "operationId": "create_project_api_v1_projects_post",
         "requestBody": {
           "content": {
@@ -8241,6 +8408,26 @@
               }
             },
             "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
           },
           "409": {
             "content": {
@@ -8302,6 +8489,26 @@
               }
             },
             "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
           },
           "404": {
             "content": {
@@ -8425,6 +8632,26 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          },
           "404": {
             "content": {
               "application/problem+json": {
@@ -8522,6 +8749,26 @@
           "204": {
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          },
           "404": {
             "content": {
               "application/problem+json": {
@@ -8600,6 +8847,26 @@
               }
             },
             "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
           },
           "404": {
             "content": {
@@ -8681,6 +8948,26 @@
               }
             },
             "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
           },
           "404": {
             "content": {

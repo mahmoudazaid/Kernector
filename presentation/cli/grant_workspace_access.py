@@ -9,7 +9,8 @@ Run with::
         --username alice --all-existing-projects
 
 Omitting both ``--project-id`` and ``--all-existing-projects`` is an error;
-it never means access to every project.
+it never means access to every project. ``--all-existing-projects`` on an
+empty catalog grants membership only.
 """
 
 from __future__ import annotations
@@ -68,7 +69,8 @@ def main(
         "--all-existing-projects",
         action="store_true",
         help=(
-            "Grant every project present in the bound workspace at run time. "
+            "Grant every project present in the bound workspace at run time "
+            "(membership only when the catalog has none). "
             "Never implied by omitting --project-id."
         ),
     )

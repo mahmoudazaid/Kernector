@@ -71,6 +71,7 @@ export async function createMcpProfile(
   body: {
     project_id: string;
     name: string;
+    user_id: string;
     expires_at?: string | null;
     description?: string;
   },

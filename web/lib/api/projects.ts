@@ -11,7 +11,7 @@ export type ListProjectsOptions = {
 };
 
 /**
- * List workspace projects via the Next BFF ``GET /api/v1/projects``.
+ * List workspace projects via the Next same-origin BFF ``GET /api/v1/projects``.
  */
 export async function listProjects(
   options: ListProjectsOptions = {},

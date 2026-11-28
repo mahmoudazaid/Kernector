@@ -46,10 +46,13 @@ Permission catalog and RBAC evaluation remain
 
 6. **Same-origin Next BFF** — Browser auth/preferences traffic goes through
    Next.js BFF routes that forward `Cookie` / `Set-Cookie` /
-   `X-CSRF-Token` only on those routes, preserve cookie attributes, set
+   `X-CSRF-Token`, preserve cookie attributes, set
    `Cache-Control: no-store`, and decide `Secure` from
    `x-forwarded-proto` or the request URL scheme. Direct browser→FastAPI
    cookie auth is unsupported; API CORS stays `allow_credentials=False`.
+   Product `/api/v1/*` cookie forwarding for trusted callers is recorded in
+   [ADR 0014](0014-trusted-workspace-context.md) Decision 8 (extends this
+   auth/preferences-only scope from #182).
 
 7. **Principal** — Frozen `Principal(user_id, username)`. `user_id` is
    immutable and stable across sessions for the same account (#446).
@@ -84,10 +87,11 @@ Permission catalog and RBAC evaluation remain
 11. **Operator bootstrap CLI (#446)** —
     `presentation.cli.grant_workspace_access` grants membership plus
     explicit `--project-id` values (repeatable) or
-    `--all-existing-projects` (snapshot). Omitting both is an error, never
-    “all projects”. Validation runs before any write so failures leave no
-    partial membership/grant state. Single-host SQLite only; multi-instance
-    persistence remains #271 / #270.
+    `--all-existing-projects` (snapshot; membership only when the catalog is
+    empty so the first project can be created via authenticated HTTP).
+    Omitting both is an error, never “all projects”. Validation runs before
+    any write so failures leave no partial membership/grant state.
+    Single-host SQLite only; multi-instance persistence remains #271 / #270.
 
 ## Consequences
 
@@ -110,6 +114,7 @@ Permission catalog and RBAC evaluation remain
 - [ADR 0006](0006-workspace-scope-identity.md)
 - [#182](https://github.com/mahmoudazaid/Kernector/issues/182)
 - [#446](https://github.com/mahmoudazaid/Kernector/issues/446)
-- [#447](https://github.com/mahmoudazaid/Kernector/issues/447)
+- [#447](https://github.com/mahmoudazaid/Kernector/issues/447) /
+  [ADR 0014](0014-trusted-workspace-context.md) (trusted HTTP/MCP context)
 - [#456](https://github.com/mahmoudazaid/Kernector/issues/456)
 - [#457](https://github.com/mahmoudazaid/Kernector/issues/457)

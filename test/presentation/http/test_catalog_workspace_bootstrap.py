@@ -62,8 +62,16 @@ def test_create_app_and_health_work_with_malformed_drive_folder(
 def test_list_documents_reports_configuration_error_without_workspace(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from domain.auth.principal import Principal
+    from domain.project.access import ProjectAccessCaller
+    from presentation.http.deps import get_trusted_caller
+
     monkeypatch.delenv("DOCUMENT_CATALOG_WORKSPACE_ID", raising=False)
     app = create_app()
+    app.dependency_overrides[get_trusted_caller] = lambda: ProjectAccessCaller(
+        principal=Principal(user_id="usr_test", username="test"),
+        workspace_id="test-workspace",
+    )
     response = TestClient(app).get("/api/v1/documents")
     assert response.status_code == 500
     body = response.json()

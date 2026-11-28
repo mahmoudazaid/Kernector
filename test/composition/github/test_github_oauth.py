@@ -82,7 +82,9 @@ def test_start_without_oauth_client_returns_hub_redirect(monkeypatch) -> None:
     monkeypatch.delenv("GITHUB_OAUTH_CLIENT_SECRET", raising=False)
     monkeypatch.delenv("GITHUB_OAUTH_REDIRECT_URI", raising=False)
 
-    url = start_github_oauth(load_settings())
+    url = start_github_oauth(
+        load_settings(), user_id="usr_a", workspace_id="ws_a"
+    )
 
     assert url.endswith("github=unconfigured")
 
@@ -90,10 +92,9 @@ def test_start_without_oauth_client_returns_hub_redirect(monkeypatch) -> None:
 def test_callback_persists_connection(settings) -> None:
     states = GitHubOAuthStateStore(settings.github_oauth.state_path, ttl_seconds=600)
     tokens = GitHubOAuthConnectionStore(settings.github_oauth.token_path)
-    state = states.issue()
+    state = states.issue(user_id='usr_a', workspace_id='ws_a')
 
-    url = complete_github_oauth(
-        settings,
+    url = complete_github_oauth(settings, user_id='usr_a', workspace_id='ws_a',
         state=state,
         code="code",
         error=None,
@@ -423,7 +424,7 @@ def test_start_oauth_without_env_repo_still_issues_github_url(settings) -> None:
     from dataclasses import replace as dc_replace
 
     bare = dc_replace(settings, github=GitHubSettings())
-    url = start_github_oauth(bare)
+    url = start_github_oauth(bare, user_id="usr_a", workspace_id="ws_a")
     assert "github.com/login/oauth/authorize" in url
 
 

@@ -13,6 +13,15 @@ from composition.auth.project_access import (
     _UnitOfWorkProjectLookup,
     build_membership_grant_policy,
 )
+from composition.auth.trusted_context import (
+    NoActiveMembershipError,
+    TrustedWorkspaceSelectionRequiredError,
+    bootstrap_workspace_id_from_settings,
+    process_bound_workspace_id_from_settings,
+    resolve_caller_for_principal,
+    resolve_trusted_project_access_caller,
+    select_trusted_workspace,
+)
 from composition.container import load_runtime_settings
 from domain.auth.csrf import csrf_tokens_match, derive_csrf_token
 from domain.auth.ports import AuthStore
@@ -83,6 +92,7 @@ class ResolvedSession:
     session_id: str
     principal: Principal
     csrf_token: str
+    selected_workspace_id: str | None = None
 
 
 def derive_session_csrf(settings: AuthSettings, session_id: str) -> str:
@@ -106,6 +116,7 @@ def resolve_session(
         session_id=session_id,
         principal=Principal(user_id=user.user_id, username=user.username),
         csrf_token=derive_session_csrf(settings, session_id),
+        selected_workspace_id=row.selected_workspace_id,
     )
 
 
@@ -179,7 +190,8 @@ def grant_workspace_access(
         username (str): Existing local username.
         project_ids (tuple[str, ...] | None): Explicit project ids to grant.
         all_existing_projects (bool): When True, grant the current workspace
-            project snapshot. Never implied by an omitted project list.
+            project snapshot (membership only when empty). Never implied by
+            an omitted project list.
         settings (Settings | None): Optional settings override.
         auth_store (SqlAuthStore | None): Test seam for the auth SQLite store.
         project_store (object | None): Test seam for the workspace project store.
@@ -220,28 +232,33 @@ def grant_workspace_access(
         else:
             selected = tuple(project_ids or ())
 
-        if not selected:
+        if not all_existing_projects and not selected:
             raise ConfigurationError(
-                "provide --project-id values or --all-existing-projects "
-                "with at least one project in the workspace"
+                "provide --project-id values or --all-existing-projects"
             )
 
-        with projects.read() as tx:  # type: ignore[attr-defined]
-            missing = [
-                project_id
-                for project_id in selected
-                if tx.projects.get(project_id) is None
-            ]
-        if missing:
-            raise ConfigurationError("unknown project")
+        if selected:
+            with projects.read() as tx:  # type: ignore[attr-defined]
+                missing = [
+                    project_id
+                    for project_id in selected
+                    if tx.projects.get(project_id) is None
+                ]
+            if missing:
+                raise ConfigurationError("unknown project")
 
         user = store.get_user_by_username(username.strip())
         if user is None:
             raise ConfigurationError("user not found")
 
-        store.grant_membership_with_projects(
-            user.user_id, bound_workspace, selected
-        )
+        if selected:
+            store.grant_membership_with_projects(
+                user.user_id, bound_workspace, selected
+            )
+        else:
+            # Empty workspace snapshot: membership only so the operator can
+            # create the first project via authenticated HTTP (#447).
+            store.grant_membership(user.user_id, bound_workspace)
     except ConfigurationError:
         raise
     except UserNotFoundError as error:
@@ -262,9 +279,13 @@ __all__ = [
     "LoginFailedError",
     "LoginResult",
     "MembershipGrantProjectAccessPolicy",
+    "NoActiveMembershipError",
     "ResolvedSession",
+    "TrustedWorkspaceSelectionRequiredError",
     "WorkspaceAccessGrant",
     "auth_settings",
+    "bootstrap_workspace_id_from_settings",
+    "process_bound_workspace_id_from_settings",
     "build_auth_store",
     "build_login",
     "build_project_access_policy",
@@ -275,5 +296,8 @@ __all__ = [
     "grant_workspace_access",
     "put_preferences",
     "require_csrf",
+    "resolve_caller_for_principal",
     "resolve_session",
+    "resolve_trusted_project_access_caller",
+    "select_trusted_workspace",
 ]

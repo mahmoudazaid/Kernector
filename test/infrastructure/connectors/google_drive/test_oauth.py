@@ -40,26 +40,26 @@ def _connection(**overrides: object) -> GoogleOAuthConnection:
 
 def test_state_is_single_use_and_rejects_replay(tmp_path: Path) -> None:
     store = GoogleOAuthStateStore(tmp_path / "state.json", ttl_seconds=600)
-    token = store.issue()
+    token = store.issue(user_id='usr_a', workspace_id='ws_a')
 
-    assert store.consume(token) is True
-    assert store.consume(token) is False
-    assert store.consume(None) is False
-    assert store.consume("unknown") is False
+    assert store.consume(token, user_id='usr_a', workspace_id='ws_a') is True
+    assert store.consume(token, user_id='usr_a', workspace_id='ws_a') is False
+    assert store.consume(None, user_id='usr_a', workspace_id='ws_a') is False
+    assert store.consume('unknown', user_id='usr_a', workspace_id='ws_a') is False
 
 
 def test_unknown_consume_does_not_erase_pending_states(tmp_path: Path) -> None:
     store = GoogleOAuthStateStore(tmp_path / "state.json", ttl_seconds=600)
-    token = store.issue()
+    token = store.issue(user_id='usr_a', workspace_id='ws_a')
 
-    assert store.consume("unknown") is False
-    assert store.consume(token) is True
+    assert store.consume('unknown', user_id='usr_a', workspace_id='ws_a') is False
+    assert store.consume(token, user_id='usr_a', workspace_id='ws_a') is True
 
 
 def test_state_file_is_owner_readable_only(tmp_path: Path) -> None:
     path = tmp_path / "state.json"
     store = GoogleOAuthStateStore(path, ttl_seconds=600)
-    store.issue()
+    store.issue(user_id='usr_a', workspace_id='ws_a')
 
     assert path.stat().st_mode & 0o777 == 0o600
 

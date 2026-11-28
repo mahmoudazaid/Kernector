@@ -357,14 +357,14 @@ def test_connection_store_mutate_applies_to_current_value_and_clear(tmp_path: Pa
 
 def test_state_is_single_use_and_expires(tmp_path: Path) -> None:
     store = JiraOAuthStateStore(tmp_path / "jira-oauth-state.json", ttl_seconds=600)
-    state = store.issue()
+    state = store.issue(user_id='usr_a', workspace_id='ws_a')
 
-    assert store.consume(state) is True
-    assert store.consume(state) is False
-    assert store.consume(None) is False
+    assert store.consume(state, user_id='usr_a', workspace_id='ws_a') is True
+    assert store.consume(state, user_id='usr_a', workspace_id='ws_a') is False
+    assert store.consume(None, user_id='usr_a', workspace_id='ws_a') is False
 
     expired = JiraOAuthStateStore(tmp_path / "jira-oauth-state-2.json", ttl_seconds=-1)
-    assert expired.consume(expired.issue()) is False
+    assert expired.consume(expired.issue(user_id='usr_a', workspace_id='ws_a'), user_id='usr_a', workspace_id='ws_a') is False
 
 
 @pytest.mark.parametrize("failure", ["server", "network"])

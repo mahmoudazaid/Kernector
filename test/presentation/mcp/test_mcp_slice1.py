@@ -26,7 +26,32 @@ from infrastructure.mcp_access.sql_store import SqlMcpAccessProfileStore
 from infrastructure.project.sql_store import SqlProjectStore
 from presentation.mcp.app import BearerAuthMiddleware, build_mcp_server, create_mcp_app
 
-_CALLER = McpCallerContext("ws-test", "default", "prj_test", frozenset())
+_CALLER = McpCallerContext(
+    "ws-test", "default", "prj_test", frozenset(), user_id="usr_test"
+)
+
+
+def _seed_mcp_principal(
+    catalog: Path,
+    workspace_id: str,
+    project_id: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> str:
+    """Create auth user with membership+grant; return user_id for profile binding."""
+    from composition.auth import build_auth_store, clear_auth_store_cache
+    from presentation.http.deps import get_settings
+
+    _ = catalog
+    monkeypatch.setenv("AUTH_SQL_PATH", str(tmp_path / "auth.sqlite"))
+    monkeypatch.setenv("AUTH_CSRF_KEY", "test-csrf-key-32-bytes-long!!!!")
+    clear_auth_store_cache()
+    get_settings.cache_clear()
+    auth = build_auth_store(get_settings())
+    user = auth.create_user("mcp-alice", "secret-password")
+    auth.grant_membership(user.user_id, workspace_id)
+    auth.grant_project(user.user_id, workspace_id, project_id)
+    return user.user_id
 
 
 @pytest.fixture
@@ -338,9 +363,10 @@ def test_authenticated_http_lists_project_list_via_request_scoped_caller(
     projects = SqlProjectStore(catalog, "ws-test")
     with projects.transaction() as tx:
         tx.projects.add(Project("prj_test", "Test", "test", 1))
+    user_id = _seed_mcp_principal(catalog, "ws-test", "prj_test", tmp_path, monkeypatch)
     store = SqlMcpAccessProfileStore(catalog, "ws-test")
     created = CreateAccessProfile(store=store).execute(
-        CreateAccessProfileRequest(project_id="prj_test", name="dev")
+        CreateAccessProfileRequest(user_id=user_id, project_id="prj_test", name="dev")
     )
     profile = replace(
         created.profile,
@@ -416,9 +442,10 @@ def _stream_test_app(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> object:
     monkeypatch.setenv("DOCUMENT_CATALOG_SQL_PATH", str(catalog))
     with SqlProjectStore(catalog, "ws-test").transaction() as tx:
         tx.projects.add(Project("prj_test", "Test", "test", 1))
+    user_id = _seed_mcp_principal(catalog, "ws-test", "prj_test", tmp_path, monkeypatch)
     store = SqlMcpAccessProfileStore(catalog, "ws-test")
     created = CreateAccessProfile(store=store).execute(
-        CreateAccessProfileRequest(project_id="prj_test", name="dev")
+        CreateAccessProfileRequest(user_id=user_id, project_id="prj_test", name="dev")
     )
     app = create_mcp_app(
         mcp_settings=load_mcp_settings(),

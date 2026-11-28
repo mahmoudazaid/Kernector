@@ -14,7 +14,12 @@ from domain.errors import ToolApprovalConflictError, ToolApprovalNotFoundError
 from domain.models import AgentTurnResult
 from domain.tool_approval import PendingToolApproval
 from presentation.http.app import create_app
-from presentation.http.deps import get_short_term_memory_runtime
+from domain.auth.principal import Principal
+from domain.project.access import ProjectAccessCaller
+from presentation.http.deps import (
+    get_short_term_memory_runtime,
+    get_trusted_caller,
+)
 
 
 @dataclass
@@ -41,6 +46,10 @@ class _StubRuntime:
 
 def _client(runtime: _StubRuntime) -> TestClient:
     app = create_app()
+    app.dependency_overrides[get_trusted_caller] = lambda: ProjectAccessCaller(
+        principal=Principal(user_id="usr_test", username="test"),
+        workspace_id="test-workspace",
+    )
     app.dependency_overrides[get_short_term_memory_runtime] = lambda: runtime
     return TestClient(app, raise_server_exceptions=False)
 

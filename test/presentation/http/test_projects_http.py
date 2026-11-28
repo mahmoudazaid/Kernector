@@ -1,4 +1,4 @@
-"""HTTP contract for /api/v1/projects (#372)."""
+"""HTTP contract for /api/v1/projects (#372 / #447)."""
 
 from __future__ import annotations
 
@@ -7,12 +7,15 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from composition.auth import build_auth_store, clear_auth_store_cache
 from composition.project.container import build_project_store
 from domain.project.models import AssociationState, SourceAssociation, SourceScope
 from infrastructure.config import load_settings
 from presentation.http.app import create_app
+from presentation.http.deps import get_settings
 
 _PROBLEM = "application/problem+json"
+_ORIGIN = "http://localhost:3000"
 LIB = {"connector_id": "gh-1", "scope_kind": "repo", "scope_value": "acme/shared-lib"}
 
 
@@ -34,8 +37,30 @@ def _configured_github_connector(
     )
 
 
+@pytest.fixture(autouse=True)
+def _member_session(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    clear_auth_store_cache()
+    get_settings.cache_clear()
+    monkeypatch.setenv("AUTH_SQL_PATH", str(tmp_path / "auth.sqlite"))
+    monkeypatch.setenv("AUTH_CSRF_KEY", "test-csrf-key-32-bytes-long!!!!")
+    monkeypatch.setenv("AUTH_TRUSTED_ORIGINS", _ORIGIN)
+    yield
+    clear_auth_store_cache()
+    get_settings.cache_clear()
+
+
 def _client() -> TestClient:
-    return TestClient(create_app(cors_origins=()), raise_server_exceptions=False)
+    client = TestClient(create_app(cors_origins=()), raise_server_exceptions=False)
+    store = build_auth_store(get_settings())
+    user = store.create_user("alice", "secret-password")
+    store.grant_membership(user.user_id, "test-workspace")
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"username": "alice", "password": "secret-password"},
+        headers={"Origin": _ORIGIN},
+    )
+    assert response.status_code == 200, response.text
+    return client
 
 
 def _create(client: TestClient, slug: str) -> dict:
@@ -138,7 +163,7 @@ def test_confirmed_associations_need_roles_with_pack_vocabulary(
 
 def test_unknown_project_is_404() -> None:
     _assert_problem(
-        _client().get("/api/v1/projects/prj_missing"), 404, "project_not_found"
+        _client().get("/api/v1/projects/prj_missing"), 404, "not_found"
     )
 
 
@@ -195,7 +220,7 @@ def test_associate_scope_its_connector_does_not_accept_is_422(
 
 
 def test_associate_unknown_project_is_404() -> None:
-    _assert_problem(_associate(_client(), "prj_missing"), 404, "project_not_found")
+    _assert_problem(_associate(_client(), "prj_missing"), 404, "not_found")
 
 
 def test_shared_scope_requires_acknowledgement() -> None:

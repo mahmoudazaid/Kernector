@@ -1,4 +1,4 @@
-"""Admin MCP profile and tools HTTP API (#324 Slice F)."""
+"""Admin MCP profile and tools HTTP API (#324 Slice F / #447)."""
 
 from __future__ import annotations
 
@@ -7,22 +7,31 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from composition.auth import build_auth_store, clear_auth_store_cache
+from composition.project.container import build_project_store
+from domain.project.models import Project
 from presentation.http.app import create_app
 from presentation.http.deps import get_settings
 
 _PROBLEM = "application/problem+json"
 _ADMIN = {"Authorization": "Bearer admin-secret-token"}
+_ORIGIN = "http://localhost:3000"
 
 
 @pytest.fixture(autouse=True)
 def _admin_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    clear_auth_store_cache()
     monkeypatch.setenv("ADMIN_API_TOKEN", "admin-secret-token")
     monkeypatch.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", "ws-a")
     monkeypatch.setenv("DOCUMENT_CATALOG_SQL_PATH", str(tmp_path / "catalog.sqlite"))
     monkeypatch.setenv("DOCUMENT_CATALOG_BACKEND", "sql")
     monkeypatch.setenv("DOMAIN_TOOL_PACKS", "software-delivery")
+    monkeypatch.setenv("AUTH_SQL_PATH", str(tmp_path / "auth.sqlite"))
+    monkeypatch.setenv("AUTH_CSRF_KEY", "test-csrf-key-32-bytes-long!!!!")
+    monkeypatch.setenv("AUTH_TRUSTED_ORIGINS", _ORIGIN)
     get_settings.cache_clear()
     yield
+    clear_auth_store_cache()
     get_settings.cache_clear()
 
 
@@ -30,10 +39,16 @@ def _client() -> TestClient:
     return TestClient(create_app(cors_origins=()), raise_server_exceptions=False)
 
 
-def _create_project(client: TestClient) -> str:
-    response = client.post("/api/v1/projects", json={"name": "Alpha", "slug": "alpha"})
-    assert response.status_code == 201, response.text
-    return response.json()["project_id"]
+def _seed_member_and_project() -> tuple[str, str]:
+    settings = get_settings()
+    auth = build_auth_store(settings)
+    user = auth.create_user("alice", "secret-password")
+    auth.grant_membership(user.user_id, "ws-a")
+    projects = build_project_store(settings)
+    with projects.transaction() as tx:
+        tx.projects.add(Project("prj_alpha", "Alpha", "alpha", 1))
+    auth.grant_project(user.user_id, "ws-a", "prj_alpha")
+    return user.user_id, "prj_alpha"
 
 
 def test_list_tools_marks_core_pack_unavailable_and_side_effect() -> None:
@@ -48,7 +63,6 @@ def test_list_tools_marks_core_pack_unavailable_and_side_effect() -> None:
     project_list = tools["core.project_list"]
     assert project_list["allowlistable"] is True
     assert project_list["side_effecting"] is False
-    # Pack side-effect example when contributed
     xray = tools.get("software_delivery.create_xray_tests")
     if xray is not None:
         assert xray["kind"] == "pack"
@@ -57,18 +71,23 @@ def test_list_tools_marks_core_pack_unavailable_and_side_effect() -> None:
 
 def test_create_list_get_rotate_allowlist_revoke_profile() -> None:
     client = _client()
-    project_id = _create_project(client)
+    user_id, project_id = _seed_member_and_project()
 
     created = client.post(
         "/api/v1/admin/mcp/profiles",
         headers=_ADMIN,
-        json={"project_id": project_id, "name": "cursor-dev"},
+        json={
+            "project_id": project_id,
+            "name": "cursor-dev",
+            "user_id": user_id,
+        },
     )
     assert created.status_code == 201, created.text
     body = created.json()
     assert body["plaintext_token"]
     profile_id = body["profile"]["profile_id"]
     assert body["profile"]["allowlist"] == []
+    assert body["profile"]["user_id"] == user_id
     assert "plaintext_token" not in body["profile"]
     token = body["plaintext_token"]
 
@@ -115,10 +134,11 @@ def test_create_list_get_rotate_allowlist_revoke_profile() -> None:
 
 def test_create_profile_unknown_project_returns_problem_404() -> None:
     client = _client()
+    user_id, _project_id = _seed_member_and_project()
     response = client.post(
         "/api/v1/admin/mcp/profiles",
         headers=_ADMIN,
-        json={"project_id": "proj", "name": "cursor"},
+        json={"project_id": "proj", "name": "cursor", "user_id": user_id},
     )
     assert response.status_code == 404
     assert response.headers["content-type"].startswith(_PROBLEM)

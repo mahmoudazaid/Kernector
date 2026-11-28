@@ -212,9 +212,16 @@ def test_cloud_status_reports_cloud_mode(tmp_path: Path) -> None:
 
 def test_cloud_only_operations_raise_data_center_mode(settings) -> None:
     with pytest.raises(JiraDataCenterModeError):
-        start_jira_oauth(settings)
+        start_jira_oauth(settings, user_id="usr_1", workspace_id="ws_1")
     with pytest.raises(JiraDataCenterModeError):
-        complete_jira_oauth(settings, state="s", code="c", error=None)
+        complete_jira_oauth(
+            settings,
+            state="s",
+            code="c",
+            error=None,
+            user_id="usr_1",
+            workspace_id="ws_1",
+        )
     with pytest.raises(JiraDataCenterModeError):
         list_jira_sites(settings)
     with pytest.raises(JiraDataCenterModeError):

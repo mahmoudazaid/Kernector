@@ -14,10 +14,10 @@ from infrastructure.connectors.github.oauth import (
 
 def test_state_is_single_use(tmp_path: Path) -> None:
     store = GitHubOAuthStateStore(tmp_path / "github-oauth-state.json", ttl_seconds=600)
-    state = store.issue()
+    state = store.issue(user_id='usr_a', workspace_id='ws_a')
 
-    assert store.consume(state) is True
-    assert store.consume(state) is False
+    assert store.consume(state, user_id='usr_a', workspace_id='ws_a') is True
+    assert store.consume(state, user_id='usr_a', workspace_id='ws_a') is False
 
 
 def test_connection_store_redacts_repr_and_writes_0600(tmp_path: Path) -> None:

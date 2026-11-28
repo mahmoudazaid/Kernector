@@ -596,15 +596,39 @@ def create_mcp_app(
         )
 
     def _authenticate(presented: str) -> McpCallerContext | None:
+        """Bearer → principal → membership → ProjectAccessCaller → policy (#447)."""
+        from composition.auth import (
+            build_auth_store,
+            build_project_access_policy,
+            resolve_trusted_project_access_caller,
+        )
         from composition.mcp_access.container import authenticate_mcp_profile_token
+        from domain.auth.principal import Principal
 
         profile = authenticate_mcp_profile_token(catalog_path, presented)
         if profile is None:
             return None
         if profile.workspace_id != bound_workspace:
             return None
-        return McpCallerContext(
-            workspace_id=profile.workspace_id,
+        if profile.user_id is None:
+            # Legacy null user_id: fail closed; recreate/rebind the profile.
+            return None
+        auth = build_auth_store(runtime)
+        user = auth.get_user(profile.user_id)
+        if user is None:
+            return None
+        principal = Principal(user_id=user.user_id, username=user.username)
+        try:
+            access_caller = resolve_trusted_project_access_caller(
+                principal, profile.workspace_id, auth
+            )
+        except Exception:
+            return None
+        policy = build_project_access_policy(runtime)
+        if not policy.can_read(access_caller, profile.project_id):
+            return None
+        return McpCallerContext.from_access_caller(
+            access_caller,
             profile_id=profile.profile_id,
             project_id=profile.project_id,
             allowlist=profile.allowlist,

@@ -42,7 +42,7 @@ Path A also needs a GitHub OAuth App (see the README GitHub section):
 ```bash
 GITHUB_OAUTH_CLIENT_ID=<client id>
 GITHUB_OAUTH_CLIENT_SECRET=<client secret>
-GITHUB_OAUTH_REDIRECT_URI=http://127.0.0.1:8000/api/v1/connectors/github/oauth/callback
+GITHUB_OAUTH_REDIRECT_URI=http://localhost:3000/api/v1/connectors/github/oauth/callback
 GITHUB_OAUTH_FRONTEND_REDIRECT=http://localhost:3000/documents
 ```
 

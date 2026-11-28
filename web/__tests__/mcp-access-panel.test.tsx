@@ -1,8 +1,9 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { McpAccessPanel } from "@/components/settings/McpAccessPanel";
 import { mcpClientConfig } from "@/lib/api/mcp-profiles";
+import { clearAuthSession, setAuthSession } from "@/lib/auth/session-store";
 
 async function openCreate(user: ReturnType<typeof userEvent.setup>) {
   await waitFor(() => {
@@ -17,6 +18,16 @@ async function openCreate(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe("McpAccessPanel", () => {
+
+beforeEach(() => {
+  clearAuthSession();
+  setAuthSession({
+    user: { user_id: "usr_test", username: "tester" },
+    csrfToken: "csrf-test",
+    preferencesStatus: "ready",
+  });
+});
+
   it("follows GitHub-style create once, then list with delete only", async () => {
     const user = userEvent.setup();
     const writeText = vi.fn().mockResolvedValue(undefined);
@@ -146,6 +157,7 @@ describe("McpAccessPanel", () => {
       name: "cursor",
       expires_at: null,
       description: "CI agent",
+      user_id: "usr_test",
     });
     expect(saveAllowlist).toHaveBeenCalledWith("mcp_1", ["core.project_list"]);
     const callout = screen.getByRole("status");

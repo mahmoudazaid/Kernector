@@ -345,6 +345,8 @@ def mark_github_reauth(tokens_store, error: BaseException) -> NoReturn:
 def start_github_oauth(
     settings: Settings,
     *,
+    user_id: str,
+    workspace_id: str,
     state_store=None,
 ) -> str:
     """Issue CSRF state and return GitHub's authorization URL."""
@@ -353,7 +355,7 @@ def start_github_oauth(
     from infrastructure.connectors.github.oauth import authorization_url
 
     store = state_store if state_store is not None else _github_state_store(settings)
-    state = store.issue()
+    state = store.issue(user_id=user_id, workspace_id=workspace_id)
     return authorization_url(settings.github_oauth, state=state)
 
 
@@ -363,6 +365,8 @@ def complete_github_oauth(
     state: str | None,
     code: str | None,
     error: str | None,
+    user_id: str,
+    workspace_id: str,
     state_store=None,
     connection_store=None,
     gateway=None,
@@ -371,7 +375,7 @@ def complete_github_oauth(
     if error == "access_denied":
         return _github_hub_redirect(settings, result="denied")
     store = state_store if state_store is not None else _github_state_store(settings)
-    if not store.consume(state):
+    if not store.consume(state, user_id=user_id, workspace_id=workspace_id):
         return _github_hub_redirect(settings, result="invalid_state")
     if error or not code:
         return _github_hub_redirect(settings, result="error")

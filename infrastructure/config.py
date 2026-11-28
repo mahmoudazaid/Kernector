@@ -146,7 +146,7 @@ class HttpAdapterSettings:
 
 @dataclass(frozen=True, slots=True)
 class AuthSettings:
-    """Local user auth (#182): SQLite path, session TTL, CSRF key, login lockout."""
+    """Local user auth (#182 / #447): SQLite path, session TTL, CSRF, lockout."""
 
     sql_path: Path
     session_ttl_seconds: int
@@ -155,6 +155,7 @@ class AuthSettings:
     login_max_failures: int
     login_lockout_seconds: int
     cookie_name: str = "kernector_session"
+    workspace_bootstrap: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -902,6 +903,8 @@ def _load_auth_settings() -> AuthSettings:
     lockout = _env_int("AUTH_LOGIN_LOCKOUT_SECONDS", "900")
     if lockout <= 0:
         raise ValueError(f"AUTH_LOGIN_LOCKOUT_SECONDS must be > 0, got {lockout}")
+    bootstrap_raw = os.getenv("AUTH_WORKSPACE_BOOTSTRAP", "").strip().lower()
+    workspace_bootstrap = bootstrap_raw in {"1", "true", "yes", "on"}
     # Cookie name is fixed so the Next middleware/BFF stay in sync (ADR 0013).
     return AuthSettings(
         sql_path=sql_path,
@@ -911,6 +914,7 @@ def _load_auth_settings() -> AuthSettings:
         login_max_failures=max_failures,
         login_lockout_seconds=lockout,
         cookie_name="kernector_session",
+        workspace_bootstrap=workspace_bootstrap,
     )
 
 

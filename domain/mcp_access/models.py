@@ -35,3 +35,4 @@ class McpAccessProfile:
     description: str = ""
     disabled_at: str | None = None
     revoked_at: str | None = None
+    user_id: str | None = None

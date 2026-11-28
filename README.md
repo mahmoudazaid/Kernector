@@ -94,13 +94,15 @@ uv run python -m presentation.cli.create_user --username alice
 ```
 
 Grant workspace membership plus **explicit** project access (single-host
-`auth.sqlite`; requires `DOCUMENT_CATALOG_WORKSPACE_ID` and existing projects):
+`auth.sqlite`; requires `DOCUMENT_CATALOG_WORKSPACE_ID`):
 
 ```bash
 uv run python -m presentation.cli.grant_workspace_access \
   --username alice --project-id prj_one --project-id prj_two
 
-# Or snapshot every project present in the bound workspace right now:
+# Snapshot every project present in the bound workspace right now.
+# On an empty catalog this grants membership only so you can create the
+# first project via authenticated HTTP (create then self-grants access):
 uv run python -m presentation.cli.grant_workspace_access \
   --username alice --all-existing-projects
 ```
@@ -108,13 +110,16 @@ uv run python -m presentation.cli.grant_workspace_access \
 Omitting both `--project-id` and `--all-existing-projects` is an error — it
 never means access to every project. Active membership alone does not grant
 projects; each grant is stored explicitly (#446). Permission/RBAC evaluation
-is #456; applying the policy on HTTP/MCP routes is #447.
+is #456. Trusted HTTP/MCP callers and authorization-before-retrieval are #447
+(ADR 0014); that story unblocks #269 and #449.
 
-Sign in at `/login`. Auth and preferences go through the Next.js same-origin
-BFF (`/api/v1/auth/*`, `/api/v1/me/preferences`). See
-[ADR 0013](docs/adr/0013-local-user-auth-and-preferences.md). The Hub requires
-a session for every product page (browser gate only — FastAPI product routes
-still accept anonymous calls until #447).
+Sign in at `/login`. Browser traffic to FastAPI (auth, preferences, and
+product `/api/v1/*` routes) goes through the Next.js same-origin BFF so the
+`kernector_session` cookie is forwarded. See
+[ADR 0013](docs/adr/0013-local-user-auth-and-preferences.md) and
+[ADR 0014](docs/adr/0014-trusted-workspace-context.md). The Hub requires a
+session for every product page; FastAPI product routes also require
+membership-backed trusted callers.
 
 ### Run the MCP Streamable HTTP server
 
@@ -367,9 +372,11 @@ Google Drive has two connection strategies. Knowledge Hub uses **user OAuth**. T
 ### Knowledge Hub (user OAuth)
 
 1. Enable the Google Drive API and create an OAuth **Web application** client.
-2. Set the authorized redirect URI to exactly
-   `http://127.0.0.1:8000/api/v1/connectors/google-drive/oauth/callback`
-   (or your deployed callback URL).
+2. Set the authorized redirect URI to exactly the **Hub** origin callback
+   `http://localhost:3000/api/v1/connectors/google-drive/oauth/callback`
+   (or your deployed Hub URL). The Hub BFF forwards the session cookie to
+   FastAPI; do not point the provider at `:8000` directly. Re-register the
+   URI with Google after changing it.
 3. Set `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`,
    `GOOGLE_OAUTH_REDIRECT_URI`, and optionally `GOOGLE_OAUTH_FRONTEND_REDIRECT`
    (see [`.env.example`](.env.example)). Never commit those values.
@@ -438,8 +445,11 @@ GitHub has two connection strategies, like Drive. Knowledge Hub uses **user OAut
 
 ### Knowledge Hub (user OAuth)
 
-1. Create a GitHub OAuth App (or GitHub App with user-to-server OAuth) with callback
-   `http://127.0.0.1:8000/api/v1/connectors/github/oauth/callback`.
+1. Create a GitHub OAuth App (or GitHub App with user-to-server OAuth) with
+   callback on the **Hub** origin:
+   `http://localhost:3000/api/v1/connectors/github/oauth/callback`
+   (or your deployed Hub URL). The Hub BFF forwards the session cookie; do not
+   point the provider at `:8000` directly. Re-register the URI after changes.
 2. Set `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`,
    `GITHUB_OAUTH_REDIRECT_URI`, and optionally `GITHUB_OAUTH_FRONTEND_REDIRECT`
    (see [`.env.example`](.env.example)). Never commit those values.
@@ -491,8 +501,10 @@ There is no CLI or API-token path. Tokens stay on the server.
 
 1. In the [Atlassian developer console](https://developer.atlassian.com/console/myapps/),
    create an OAuth 2.0 integration. Add the Jira API scopes `read:jira-work`
-   and `read:me`, and set the callback URL to
-   `http://127.0.0.1:8000/api/v1/connectors/jira/oauth/callback`.
+   and `read:me`, and set the callback URL to the **Hub** origin
+   `http://localhost:3000/api/v1/connectors/jira/oauth/callback`
+   (or your deployed Hub URL). The Hub BFF forwards the session cookie; do not
+   point the provider at `:8000` directly. Re-register the URI after changes.
    Kernector also requests `offline_access` to get a refresh token.
 2. Set `JIRA_OAUTH_CLIENT_ID`, `JIRA_OAUTH_CLIENT_SECRET`,
    `JIRA_OAUTH_REDIRECT_URI`, and optionally `JIRA_OAUTH_FRONTEND_REDIRECT`
@@ -539,12 +551,23 @@ Grant files live under `data/jira-oauth-*.json` (gitignored, mode `0600`).
 
 ### Smoke test
 
+Product connector routes require a signed-in session (#447). Log in once,
+reuse the cookie jar, and keep `Origin` in `AUTH_TRUSTED_ORIGINS`. The caller
+needs an active membership in `DOCUMENT_CATALOG_WORKSPACE_ID` (see
+[Local user auth](#local-user-auth-182-and-workspace-access-446)). Prefer the
+Hub origin so the same BFF path the UI uses forwards the cookie:
+
 ```bash
-curl -s http://127.0.0.1:8000/api/v1/connectors/jira
-curl -s http://127.0.0.1:8000/api/v1/connectors/jira/sites
-curl -s -X PUT http://127.0.0.1:8000/api/v1/connectors/jira/selection \
+COOKIE_JAR=$(mktemp)
+curl -s -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
+  -X POST http://localhost:3000/api/v1/auth/login \
+  -H 'Content-Type: application/json' -H 'Origin: http://localhost:3000' \
+  -d '{"username":"alice","password":"<password>"}'
+curl -s -b "$COOKIE_JAR" http://localhost:3000/api/v1/connectors/jira
+curl -s -b "$COOKIE_JAR" http://localhost:3000/api/v1/connectors/jira/sites
+curl -s -b "$COOKIE_JAR" -X PUT http://localhost:3000/api/v1/connectors/jira/selection \
   -H 'Content-Type: application/json' -d '{"project_keys":["ENG"]}'
-curl -s -X POST http://127.0.0.1:8000/api/v1/connectors/jira/sync
+curl -s -b "$COOKIE_JAR" -X POST http://localhost:3000/api/v1/connectors/jira/sync
 ```
 
 Errors are typed: 422 for invalid input, 409 when the connection needs
@@ -717,13 +740,27 @@ A project groups the sources that describe one product (#372). Create it, then
 associate connector scopes with it. Projects live in the catalog database for
 `DOCUMENT_CATALOG_WORKSPACE_ID`.
 
+Project HTTP requires a signed-in membership-backed caller (#447). Provision a
+user, grant workspace access (membership only is fine on an empty catalog —
+`create` then self-grants the new project), log in through the Hub BFF, and
+reuse the cookie jar:
+
 ```bash
-curl -s -X POST http://127.0.0.1:8000/api/v1/projects \
+uv run python -m presentation.cli.create_user --username alice
+uv run python -m presentation.cli.grant_workspace_access \
+  --username alice --all-existing-projects
+
+COOKIE_JAR=$(mktemp)
+curl -s -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
+  -X POST http://localhost:3000/api/v1/auth/login \
+  -H 'Content-Type: application/json' -H 'Origin: http://localhost:3000' \
+  -d '{"username":"alice","password":"<password>"}'
+curl -s -b "$COOKIE_JAR" -X POST http://localhost:3000/api/v1/projects \
   -H 'Content-Type: application/json' -d '{"name":"Order Intake","slug":"proj"}'
-curl -s -X POST http://127.0.0.1:8000/api/v1/projects/<project_id>/sources \
+curl -s -b "$COOKIE_JAR" -X POST http://localhost:3000/api/v1/projects/<project_id>/sources \
   -H 'Content-Type: application/json' \
   -d '{"connector_id":"<id>","scope_kind":"repo","scope_value":"acme/proj-orders","roles":["backend","api_contract"]}'
-curl -s http://127.0.0.1:8000/api/v1/projects/<project_id>
+curl -s -b "$COOKIE_JAR" http://localhost:3000/api/v1/projects/<project_id>
 ```
 
 - Scopes: GitHub `repo` = `owner/name`; Jira `project_key` = `PROJ`. Google

@@ -99,34 +99,54 @@ class GoogleOAuthStateStore:
         self._path = path
         self._ttl_seconds = ttl_seconds
 
-    def issue(self) -> str:
-        """Create and persist a new single-use state token."""
+    def issue(self, *, user_id: str, workspace_id: str) -> str:
+        """Create a single-use state bound to caller identity (#447)."""
         token = secrets.token_urlsafe(32)
         with ExclusiveLock(self._path):
             items = self._read()
             now = time.time()
             items = {
-                key: exp
-                for key, exp in items.items()
-                if isinstance(exp, (int, float)) and exp > now
+                key: payload
+                for key, payload in items.items()
+                if isinstance(payload, dict)
+                and isinstance(payload.get("exp"), (int, float))
+                and payload["exp"] > now
             }
-            items[token] = now + self._ttl_seconds
+            items[token] = {
+                "exp": now + self._ttl_seconds,
+                "user_id": user_id,
+                "workspace_id": workspace_id,
+            }
             self._write(items)
         return token
 
-    def consume(self, token: str | None) -> bool:
-        """Return True once for a valid unexpired token; reject replays."""
+    def consume(
+        self,
+        token: str | None,
+        *,
+        user_id: str,
+        workspace_id: str,
+    ) -> bool:
+        """Return True once for a valid bound token; reject replays/mismatches."""
         if not token:
             return False
         with ExclusiveLock(self._path):
             items = self._read()
-            expiry = items.pop(token, None)
-            if expiry is None:
+            payload = items.pop(token, None)
+            if payload is None:
                 return False
             self._write(items)
-            return isinstance(expiry, (int, float)) and expiry >= time.time()
+            if not isinstance(payload, dict):
+                return False
+            expiry = payload.get("exp")
+            if not isinstance(expiry, (int, float)) or expiry < time.time():
+                return False
+            return (
+                payload.get("user_id") == user_id
+                and payload.get("workspace_id") == workspace_id
+            )
 
-    def _read(self) -> dict[str, float]:
+    def _read(self) -> dict[str, dict]:
         if not self._path.is_file():
             return {}
         try:
@@ -135,13 +155,13 @@ class GoogleOAuthStateStore:
             return {}
         if not isinstance(raw, dict):
             return {}
-        parsed: dict[str, float] = {}
+        parsed: dict[str, dict] = {}
         for key, value in raw.items():
-            if isinstance(key, str) and isinstance(value, (int, float)):
-                parsed[key] = float(value)
+            if isinstance(key, str) and isinstance(value, dict):
+                parsed[key] = value
         return parsed
 
-    def _write(self, items: dict[str, float]) -> None:
+    def _write(self, items: dict[str, dict]) -> None:
         _atomic_write_json(self._path, items)
 
 

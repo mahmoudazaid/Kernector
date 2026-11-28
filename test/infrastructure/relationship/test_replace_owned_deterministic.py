@@ -60,7 +60,8 @@ def test_migration_preserves_provider_watermarks_as_kind(
     staged = tmp_path / "migrations"
     staged.mkdir()
     for path in sorted(shipped.glob("*.sql")):
-        if path.name.startswith("012_"):
+        # Stage only pre-watermark migrations (001–011).
+        if int(path.name.split("_", 1)[0]) >= 12:
             continue
         (staged / path.name).write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
     db = tmp_path / "catalog.sqlite"
@@ -82,7 +83,7 @@ def test_migration_preserves_provider_watermarks_as_kind(
         connection.close()
 
     apply_migrations(db)
-    assert current_schema_version(db) == 12
+    assert current_schema_version(db) == 13
     store = SqlRelationshipStore(db, "ws-a")
     assert (
         store.get_record_watermark(

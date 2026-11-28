@@ -80,6 +80,7 @@ class McpAccessProfileResponse(BaseModel):
     description: str = ""
     disabled_at: str | None = None
     revoked_at: str | None = None
+    user_id: str | None = None
 
 
 class McpAccessProfileCreatedResponse(BaseModel):
@@ -90,6 +91,7 @@ class McpAccessProfileCreatedResponse(BaseModel):
 class CreateMcpAccessProfileBody(BaseModel):
     project_id: str
     name: str
+    user_id: str
     expires_at: str | None = None
     description: str = ""
 

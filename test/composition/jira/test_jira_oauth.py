@@ -38,7 +38,7 @@ def settings(tmp_path: Path):
 def _callback(settings, gateway: FakeGateway, **overrides):
     states, tokens = stores(settings)
     kwargs = {
-        "state": states.issue(),
+        "state": states.issue(user_id='usr_a', workspace_id='ws_a'),
         "code": "code",
         "error": None,
         "state_store": states,
@@ -46,7 +46,7 @@ def _callback(settings, gateway: FakeGateway, **overrides):
         "gateway": gateway,
     }
     kwargs.update(overrides)
-    return complete_jira_oauth(settings, **kwargs), tokens
+    return complete_jira_oauth(settings, user_id='usr_a', workspace_id='ws_a', **kwargs), tokens
 
 
 def test_start_without_client_redirects_unconfigured(tmp_path: Path) -> None:
@@ -55,17 +55,17 @@ def test_start_without_client_redirects_unconfigured(tmp_path: Path) -> None:
 
     settings = replace(settings, jira_oauth=replace(settings.jira_oauth, client_id=None))
 
-    assert start_jira_oauth(settings).endswith("jira=unconfigured")
+    assert start_jira_oauth(settings, user_id='usr_a', workspace_id='ws_a').endswith("jira=unconfigured")
 
 
 def test_start_returns_atlassian_url_with_issued_state(settings) -> None:
     states, _ = stores(settings)
 
-    url = start_jira_oauth(settings, state_store=states)
+    url = start_jira_oauth(settings, user_id='usr_a', workspace_id='ws_a', state_store=states)
 
     query = parse_qs(urlsplit(url).query)
     assert url.startswith("https://auth.atlassian.com/authorize?")
-    assert states.consume(query["state"][0]) is True
+    assert states.consume(query['state'][0], user_id='usr_a', workspace_id='ws_a') is True
 
 
 def test_callback_denied(settings) -> None:
