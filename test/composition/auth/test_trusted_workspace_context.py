@@ -117,6 +117,35 @@ def test_select_requires_session_selection_when_multiple_active() -> None:
         select_trusted_workspace(_principal(), store)
 
 
+def test_select_prefers_process_bound_workspace_among_multiple_active() -> None:
+    store = _MemMembership()
+    store.grant_membership("usr_alice", "ws_a")
+    store.grant_membership("usr_alice", "ws_b")
+    assert (
+        select_trusted_workspace(
+            _principal(),
+            store,
+            preferred_workspace_id="ws_b",
+        )
+        == "ws_b"
+    )
+
+
+def test_select_session_selection_overrides_preferred_workspace() -> None:
+    store = _MemMembership()
+    store.grant_membership("usr_alice", "ws_a")
+    store.grant_membership("usr_alice", "ws_b")
+    assert (
+        select_trusted_workspace(
+            _principal(),
+            store,
+            session_selected_workspace_id="ws_a",
+            preferred_workspace_id="ws_b",
+        )
+        == "ws_a"
+    )
+
+
 def test_select_accepts_membership_validated_session_selection() -> None:
     store = _MemMembership()
     store.grant_membership("usr_alice", "ws_a")

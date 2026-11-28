@@ -103,3 +103,22 @@ def test_documents_deny_when_trusted_workspace_differs_from_process_bound(
     response = client.get("/api/v1/documents")
     assert response.status_code == 403
     assert response.json()["code"] == "forbidden"
+
+
+def test_documents_auto_select_process_bound_among_multiple_memberships(
+    auth_env,
+) -> None:
+    """Multi-membership users are not locked out when bound workspace matches."""
+    client = _client()
+    store = build_auth_store(get_settings())
+    user = store.create_user("multi", "secret-password")
+    store.grant_membership(user.user_id, "test-workspace")
+    store.grant_membership(user.user_id, "other-workspace")
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"username": "multi", "password": "secret-password"},
+        headers={"Origin": _ORIGIN},
+    )
+    assert login.status_code == 200, login.text
+    response = client.get("/api/v1/documents")
+    assert response.status_code == 200, response.text

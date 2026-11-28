@@ -1,6 +1,7 @@
 /**
- * Same-origin BFF proxy for auth and preferences (#182).
- * Forwards Cookie / Set-Cookie / X-CSRF-Token only on these routes.
+ * Same-origin BFF proxy for Hub→FastAPI (#182 / #447 / ADR 0014).
+ * Forwards Cookie / Set-Cookie / X-CSRF-Token (and Location) for auth,
+ * preferences, and product `/api/v1/*` routes that need the session cookie.
  */
 
 import { AUTH_COOKIE_NAME } from "@/lib/auth/constants";

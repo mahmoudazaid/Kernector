@@ -111,8 +111,9 @@ projects; each grant is stored explicitly (#446). Permission/RBAC evaluation
 is #456. Trusted HTTP/MCP callers and authorization-before-retrieval are #447
 (ADR 0014); that story unblocks #269 and #449.
 
-Sign in at `/login`. Auth and preferences go through the Next.js same-origin
-BFF (`/api/v1/auth/*`, `/api/v1/me/preferences`). See
+Sign in at `/login`. Browser traffic to FastAPI (auth, preferences, and
+product `/api/v1/*` routes) goes through the Next.js same-origin BFF so the
+`kernector_session` cookie is forwarded. See
 [ADR 0013](docs/adr/0013-local-user-auth-and-preferences.md) and
 [ADR 0014](docs/adr/0014-trusted-workspace-context.md). The Hub requires a
 session for every product page; FastAPI product routes also require
@@ -369,9 +370,11 @@ Google Drive has two connection strategies. Knowledge Hub uses **user OAuth**. T
 ### Knowledge Hub (user OAuth)
 
 1. Enable the Google Drive API and create an OAuth **Web application** client.
-2. Set the authorized redirect URI to exactly
-   `http://127.0.0.1:8000/api/v1/connectors/google-drive/oauth/callback`
-   (or your deployed callback URL).
+2. Set the authorized redirect URI to exactly the **Hub** origin callback
+   `http://localhost:3000/api/v1/connectors/google-drive/oauth/callback`
+   (or your deployed Hub URL). The Hub BFF forwards the session cookie to
+   FastAPI; do not point the provider at `:8000` directly. Re-register the
+   URI with Google after changing it.
 3. Set `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`,
    `GOOGLE_OAUTH_REDIRECT_URI`, and optionally `GOOGLE_OAUTH_FRONTEND_REDIRECT`
    (see [`.env.example`](.env.example)). Never commit those values.
@@ -440,8 +443,11 @@ GitHub has two connection strategies, like Drive. Knowledge Hub uses **user OAut
 
 ### Knowledge Hub (user OAuth)
 
-1. Create a GitHub OAuth App (or GitHub App with user-to-server OAuth) with callback
-   `http://127.0.0.1:8000/api/v1/connectors/github/oauth/callback`.
+1. Create a GitHub OAuth App (or GitHub App with user-to-server OAuth) with
+   callback on the **Hub** origin:
+   `http://localhost:3000/api/v1/connectors/github/oauth/callback`
+   (or your deployed Hub URL). The Hub BFF forwards the session cookie; do not
+   point the provider at `:8000` directly. Re-register the URI after changes.
 2. Set `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`,
    `GITHUB_OAUTH_REDIRECT_URI`, and optionally `GITHUB_OAUTH_FRONTEND_REDIRECT`
    (see [`.env.example`](.env.example)). Never commit those values.
@@ -493,8 +499,10 @@ There is no CLI or API-token path. Tokens stay on the server.
 
 1. In the [Atlassian developer console](https://developer.atlassian.com/console/myapps/),
    create an OAuth 2.0 integration. Add the Jira API scopes `read:jira-work`
-   and `read:me`, and set the callback URL to
-   `http://127.0.0.1:8000/api/v1/connectors/jira/oauth/callback`.
+   and `read:me`, and set the callback URL to the **Hub** origin
+   `http://localhost:3000/api/v1/connectors/jira/oauth/callback`
+   (or your deployed Hub URL). The Hub BFF forwards the session cookie; do not
+   point the provider at `:8000` directly. Re-register the URI after changes.
    Kernector also requests `offline_access` to get a refresh token.
 2. Set `JIRA_OAUTH_CLIENT_ID`, `JIRA_OAUTH_CLIENT_SECRET`,
    `JIRA_OAUTH_REDIRECT_URI`, and optionally `JIRA_OAUTH_FRONTEND_REDIRECT`

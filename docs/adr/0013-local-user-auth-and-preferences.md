@@ -46,10 +46,13 @@ Permission catalog and RBAC evaluation remain
 
 6. **Same-origin Next BFF** — Browser auth/preferences traffic goes through
    Next.js BFF routes that forward `Cookie` / `Set-Cookie` /
-   `X-CSRF-Token` only on those routes, preserve cookie attributes, set
+   `X-CSRF-Token`, preserve cookie attributes, set
    `Cache-Control: no-store`, and decide `Secure` from
    `x-forwarded-proto` or the request URL scheme. Direct browser→FastAPI
    cookie auth is unsupported; API CORS stays `allow_credentials=False`.
+   Product `/api/v1/*` cookie forwarding for trusted callers is recorded in
+   [ADR 0014](0014-trusted-workspace-context.md) Decision 8 (extends this
+   auth/preferences-only scope from #182).
 
 7. **Principal** — Frozen `Principal(user_id, username)`. `user_id` is
    immutable and stable across sessions for the same account (#446).

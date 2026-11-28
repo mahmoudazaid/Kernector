@@ -30,13 +30,18 @@ remains [#456](https://github.com/mahmoudazaid/Kernector/issues/456).
    and active memberships:
    - zero active memberships → deny (403 once authenticated)
    - one → auto-select
-   - multiple → require a membership-validated server-side session selection
-     (never trust a raw client `workspace_id` as authorization)
+   - multiple → prefer a membership-validated server-side session selection;
+     until [#448](https://github.com/mahmoudazaid/Kernector/issues/448), if
+     there is no session selection, auto-select the process-bound
+     `DOCUMENT_CATALOG_WORKSPACE_ID` when it is among the caller's active
+     memberships; otherwise require session selection (never trust a raw
+     client `workspace_id` as authorization)
 
 2. **Bootstrap mode** — `DOCUMENT_CATALOG_WORKSPACE_ID` is only an explicit
    single-operator bootstrap constraint when `AUTH_WORKSPACE_BOOTSTRAP` is
    enabled. Bootstrap still requires active membership in that workspace. There
-   is no implicit `"default"` workspace.
+   is no implicit `"default"` workspace. Until #448, non-bootstrap HTTP also
+   prefers that process-bound id among multiple memberships (Decision 1).
 
 3. **Seam contract** — Composition resolves
    `ProjectAccessCaller(principal, workspace_id)` from an authenticated
@@ -63,6 +68,15 @@ remains [#456](https://github.com/mahmoudazaid/Kernector/issues/456).
    project policy → tool dispatch. `McpCallerContext` is constructed from the
    resolved `ProjectAccessCaller`, profile project, and allowlist.
 
+8. **Same-origin product BFF** — Extends [ADR 0013](0013-local-user-auth-and-preferences.md)
+   Decision 6: Hub browser traffic for product `/api/v1/*` (documents, chat,
+   connectors, OAuth start/callback, projects, etc.) also goes through the
+   Next.js same-origin BFF with `Cookie` / `Set-Cookie` / `X-CSRF-Token`
+   forwarding (`proxyAuthApi` + catch-all). Provider OAuth redirect URIs must
+   target the Hub origin (not FastAPI `:8000`) so the top-level callback GET
+   carries `kernector_session` (`SameSite=Lax`). Direct browser→FastAPI cookie
+   auth remains unsupported; API CORS stays `allow_credentials=False`.
+
 ## Consequences
 
 - ADR 0006 Decision 2’s live product meaning (env as sole workspace source for
@@ -71,6 +85,8 @@ remains [#456](https://github.com/mahmoudazaid/Kernector/issues/456).
 - #447 unblocks per-workspace OAuth grant stores (#269, #449) and retrieval
   isolation (#448) that need trusted workspace binding input.
 - Operators recreate or rebind legacy MCP profiles that lack `user_id`.
+- Operators re-register Google/GitHub/Atlassian OAuth redirect URIs to the Hub
+  origin when upgrading from FastAPI-direct callbacks.
 
 ## Related docs
 

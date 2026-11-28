@@ -15,6 +15,7 @@ from composition.auth import (
     TrustedWorkspaceSelectionRequiredError,
     bootstrap_workspace_id_from_settings,
     build_auth_store,
+    process_bound_workspace_id_from_settings,
     resolve_caller_for_principal,
     resolve_session,
 )
@@ -123,6 +124,7 @@ def get_trusted_caller(
         raise HTTPException(
             status_code=401, detail="Authentication is required."
         )
+    bound = process_bound_workspace_id_from_settings(settings)
     try:
         bootstrap = bootstrap_workspace_id_from_settings(settings)
         caller = resolve_caller_for_principal(
@@ -130,6 +132,8 @@ def get_trusted_caller(
             store,
             session_selected_workspace_id=resolved.selected_workspace_id,
             bootstrap_workspace_id=bootstrap,
+            # Until #448, prefer the process-bound workspace among memberships.
+            preferred_workspace_id=bound,
         )
     except NoActiveMembershipError as error:
         raise HTTPException(
@@ -143,14 +147,11 @@ def get_trusted_caller(
         ) from error
 
     # Until #448, catalog/vector/connectors are process-bound to env workspace.
-    bound = settings.document_catalog.workspace_id
-    if bound is not None and str(bound).strip():
-        bound_id = str(bound).strip()
-        if caller.workspace_id != bound_id:
-            raise HTTPException(
-                status_code=403,
-                detail="Workspace is not available on this service.",
-            )
+    if bound is not None and caller.workspace_id != bound:
+        raise HTTPException(
+            status_code=403,
+            detail="Workspace is not available on this service.",
+        )
     return caller
 
 
