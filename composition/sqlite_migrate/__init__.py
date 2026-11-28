@@ -31,6 +31,15 @@ _DEFAULT_BACKUP_KEEP = 5
 class MigrateSqliteError(RuntimeError):
     """SQLite pre-migrate backup or schema apply failed."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        backups: tuple[Path, ...] = (),
+    ) -> None:
+        super().__init__(message)
+        self.backups = backups
+
 
 @dataclass(frozen=True, slots=True)
 class MigrateSqliteResult:
@@ -196,7 +205,8 @@ def run_sqlite_migrations(
             backups.append(backup_sqlite_file(path, backup_root, label=label))
         except (OSError, sqlite3.Error, CatalogError) as error:
             raise MigrateSqliteError(
-                f"could not back up {path}: {error}"
+                f"could not back up {path}: {error}",
+                backups=tuple(backups),
             ) from error
 
     try:
@@ -205,7 +215,10 @@ def run_sqlite_migrations(
         apply_migrations(workspace_path, migrations_dir=_WORKSPACE_STORE_MIGRATIONS)
         apply_migrations(feedback_path, migrations_dir=_FEEDBACK_MIGRATIONS)
     except (CatalogError, OSError, RuntimeError) as error:
-        raise MigrateSqliteError(str(error)) from error
+        raise MigrateSqliteError(
+            str(error),
+            backups=tuple(backups),
+        ) from error
 
     for label, _path, _migrations_dir in targets:
         prune_sqlite_backups(backup_root, label=label, keep=keep)

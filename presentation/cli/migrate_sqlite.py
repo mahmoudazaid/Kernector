@@ -71,8 +71,14 @@ def main(
     try:
         settings = load_settings()
         result = migrate(settings, backup_root=args.backup_dir, keep=args.keep)
-    except (ConfigurationError, MigrateSqliteError) as error:
+    except ConfigurationError as error:
         print(f"migrate failed: {error}", file=sys.stderr)
+        return 2
+    except MigrateSqliteError as error:
+        print(
+            f"migrate failed: {error} backups={len(error.backups)}",
+            file=sys.stderr,
+        )
         return 2
 
     print(

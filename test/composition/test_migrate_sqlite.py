@@ -144,11 +144,13 @@ def test_run_sqlite_migrations_preserves_original_when_migrate_fails(
         boom,
     )
 
-    with pytest.raises(MigrateSqliteError, match="simulated migration failure"):
+    with pytest.raises(MigrateSqliteError, match="simulated migration failure") as raised:
         run_sqlite_migrations(settings, backup_root=tmp_path / "backups")
 
     assert catalog.read_bytes() == before
     assert any((tmp_path / "backups").iterdir())
+    assert raised.value.backups
+    assert all(path.exists() for path in raised.value.backups)
 
 
 def test_run_sqlite_migrations_wraps_unreadable_db_as_migrate_error(

@@ -26,9 +26,14 @@ def test_cli_prints_ok_and_returns_zero(tmp_path: Path) -> None:
     assert code == 0
 
 
-def test_cli_returns_two_on_migrate_failure() -> None:
+def test_cli_returns_two_on_migrate_failure(
+    tmp_path: Path, capsys
+) -> None:
+    backup = tmp_path / "catalog-20260101T000000Z.sqlite"
+    backup.write_bytes(b"x")
+
     def boom(_settings: object, backup_root: Path | None = None, keep: int = 5):
-        raise MigrateSqliteError("nope")
+        raise MigrateSqliteError("nope", backups=(backup,))
 
     code = main(
         [],
@@ -37,6 +42,7 @@ def test_cli_returns_two_on_migrate_failure() -> None:
     )
 
     assert code == 2
+    assert "backups=1" in capsys.readouterr().err
 
 
 def test_cli_rejects_negative_keep() -> None:
