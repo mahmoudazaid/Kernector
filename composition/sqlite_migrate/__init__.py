@@ -8,7 +8,7 @@ SQLite files.
 
 from __future__ import annotations
 
-import shutil
+import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -18,7 +18,7 @@ from infrastructure.catalog.errors import CatalogError
 from infrastructure.catalog.sql_schema import apply_migrations
 from infrastructure.config import Settings
 
-_INFRA = Path(__file__).resolve().parents[1] / "infrastructure"
+_INFRA = Path(__file__).resolve().parents[2] / "infrastructure"
 _AUTH_MIGRATIONS = _INFRA / "auth" / "migrations"
 _FEEDBACK_MIGRATIONS = _INFRA / "feedback" / "migrations"
 _WORKSPACE_STORE_MIGRATIONS = _INFRA / "workspace_store" / "migrations"
@@ -40,11 +40,14 @@ class MigrateSqliteResult:
 
 
 def backup_sqlite_file(source: Path, dest_dir: Path, *, label: str) -> Path:
-    """Copy ``source`` (and WAL/SHM sidecars when present) into ``dest_dir``.
+    """Take a consistent online backup of ``source`` into ``dest_dir``.
+
+    Uses SQLite's backup API so concurrent writers and WAL sidecars are
+    handled without torn file copies.
 
     Args:
         source: Existing SQLite database file.
-        dest_dir: Directory that receives the backup files.
+        dest_dir: Directory that receives the backup file.
         label: Short name embedded in the backup filename.
 
     Returns:
@@ -53,11 +56,15 @@ def backup_sqlite_file(source: Path, dest_dir: Path, *, label: str) -> Path:
     dest_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     dest = dest_dir / f"{label}-{stamp}.sqlite"
-    shutil.copy2(source, dest)
-    for suffix in ("-wal", "-shm"):
-        sidecar = Path(f"{source}{suffix}")
-        if sidecar.exists():
-            shutil.copy2(sidecar, dest_dir / f"{dest.name}{suffix}")
+    source_conn = sqlite3.connect(source)
+    try:
+        dest_conn = sqlite3.connect(dest)
+        try:
+            source_conn.backup(dest_conn)
+        finally:
+            dest_conn.close()
+    finally:
+        source_conn.close()
     return dest
 
 
@@ -125,7 +132,7 @@ def run_sqlite_migrations(
                 backups.append(
                     backup_sqlite_file(path, backup_root, label=label)
                 )
-            except OSError as error:
+            except (OSError, sqlite3.Error) as error:
                 raise MigrateSqliteError(
                     f"could not back up {path}: {error}"
                 ) from error

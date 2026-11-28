@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from composition import load_runtime_settings
-from composition.migrate_sqlite import (
+from composition.sqlite_migrate import (
     MigrateSqliteError,
     MigrateSqliteResult,
     backup_sqlite_file,
@@ -90,19 +90,29 @@ def test_run_sqlite_migrations_backs_up_existing_sqlite_before_migrate(
     assert row == (42,)
 
 
-def test_backup_sqlite_file_copies_wal_sidecar_when_present(tmp_path: Path) -> None:
+def test_backup_sqlite_file_captures_wal_mode_data(tmp_path: Path) -> None:
     source = tmp_path / "db.sqlite"
-    source.write_bytes(b"sqlite-main")
-    (tmp_path / "db.sqlite-wal").write_bytes(b"wal-bytes")
-    (tmp_path / "db.sqlite-shm").write_bytes(b"shm-bytes")
     dest_dir = tmp_path / "backups"
-
-    copied = backup_sqlite_file(source, dest_dir, label="catalog")
+    writer = sqlite3.connect(source)
+    try:
+        assert writer.execute("PRAGMA journal_mode=WAL").fetchone() == ("wal",)
+        writer.execute("CREATE TABLE marker (id INTEGER PRIMARY KEY, note TEXT)")
+        writer.execute("INSERT INTO marker (id, note) VALUES (1, 'from-wal')")
+        writer.commit()
+        # Keep the writer open so uncheckpointed WAL pages exist while
+        # the online backup runs (mirrors api/mcp holding the DB open).
+        copied = backup_sqlite_file(source, dest_dir, label="catalog")
+    finally:
+        writer.close()
 
     assert copied.exists()
-    assert copied.read_bytes() == b"sqlite-main"
-    assert (dest_dir / f"{copied.name}-wal").read_bytes() == b"wal-bytes"
-    assert (dest_dir / f"{copied.name}-shm").read_bytes() == b"shm-bytes"
+    assert not (dest_dir / f"{copied.name}-wal").exists()
+    restored = sqlite3.connect(copied)
+    try:
+        row = restored.execute("SELECT note FROM marker WHERE id = 1").fetchone()
+    finally:
+        restored.close()
+    assert row == ("from-wal",)
 
 
 def test_run_sqlite_migrations_preserves_original_when_migrate_fails(
@@ -119,7 +129,7 @@ def test_run_sqlite_migrations_preserves_original_when_migrate_fails(
         raise RuntimeError("simulated migration failure")
 
     monkeypatch.setattr(
-        "composition.migrate_sqlite.apply_migrations",
+        "composition.sqlite_migrate.apply_migrations",
         boom,
     )
 

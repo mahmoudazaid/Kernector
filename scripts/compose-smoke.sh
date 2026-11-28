@@ -35,7 +35,8 @@ else
 fi
 
 echo "==> Fresh install"
-KERNECTOR_IMAGE_TAG="$TAG_A" docker compose -p "$PROJECT" --env-file "$ENV_FILE" up -d --pull missing
+export KERNECTOR_IMAGE_TAG="$TAG_A"
+docker compose -p "$PROJECT" --env-file "$ENV_FILE" up -d --pull missing
 API_PORT="$(docker compose -p "$PROJECT" port api 8000 | awk -F: '{print $NF}')"
 WEB_PORT="$(docker compose -p "$PROJECT" port web 3000 | awk -F: '{print $NF}')"
 MCP_PORT="$(docker compose -p "$PROJECT" port mcp 8100 | awk -F: '{print $NF}')"
@@ -65,7 +66,7 @@ from pathlib import Path
 import sqlite3
 from composition import load_runtime_settings
 from composition.auth import create_local_user
-from composition.migrate_sqlite import run_sqlite_migrations
+from composition.sqlite_migrate import run_sqlite_migrations
 
 settings = load_runtime_settings()
 run_sqlite_migrations(settings)
@@ -94,7 +95,8 @@ if [[ "${SMOKE_SKIP_BUILD:-0}" != "1" && "$TAG_B" != "$TAG_A" ]]; then
 fi
 
 echo "==> Upgrade / recreate with $TAG_B (reuse volumes)"
-KERNECTOR_IMAGE_TAG="$TAG_B" docker compose -p "$PROJECT" --env-file "$ENV_FILE" up -d --pull missing --force-recreate
+export KERNECTOR_IMAGE_TAG="$TAG_B"
+docker compose -p "$PROJECT" --env-file "$ENV_FILE" up -d --pull missing --force-recreate
 wait_http "http://127.0.0.1:${API_PORT}/health"
 wait_http "http://127.0.0.1:${WEB_PORT}/api/healthz"
 wait_http "http://127.0.0.1:${MCP_PORT}/healthz"

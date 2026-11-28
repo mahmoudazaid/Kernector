@@ -17,7 +17,7 @@ from pathlib import Path
 
 from application.errors import ConfigurationError
 from composition import load_runtime_settings
-from composition.migrate_sqlite import (
+from composition.sqlite_migrate import (
     MigrateSqliteError,
     MigrateSqliteResult,
     run_sqlite_migrations,

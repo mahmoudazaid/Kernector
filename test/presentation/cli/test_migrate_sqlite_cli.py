@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from composition.migrate_sqlite import MigrateSqliteError, MigrateSqliteResult
+from composition.sqlite_migrate import MigrateSqliteError, MigrateSqliteResult
 from presentation.cli.migrate_sqlite import main
 
 

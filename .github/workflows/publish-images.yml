@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       promote_stable:
-        description: "Promote built tags to stable after tests"
+        description: "Promote built tags to stable after smoke (main only)"
         type: boolean
-        default: true
+        default: false
 
 concurrency:
   group: publish-images-${{ github.ref }}
@@ -98,14 +98,14 @@ jobs:
           fi
           promote=false
           if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
-            promote=true
-          fi
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.promote_stable }}" == "true" ]]; then
-            promote=true
-          fi
-          if [[ "$promote" == "true" ]]; then
-            tags_api="$tags_api,${API_IMAGE}:stable"
-            tags_web="$tags_web,${WEB_IMAGE}:stable"
+            if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+              if [[ "${{ inputs.promote_stable }}" == "true" ]]; then
+                promote=true
+              fi
+            else
+              # Push to main: promote after compose-smoke succeeds.
+              promote=true
+            fi
           fi
           echo "promote_stable=$promote" >> "$GITHUB_OUTPUT"
           echo "tags_api=$tags_api" >> "$GITHUB_OUTPUT"
@@ -159,3 +159,25 @@ jobs:
           docker pull "${{ env.API_IMAGE }}:${SMOKE_TAG_A}"
           docker pull "${{ env.WEB_IMAGE }}:${SMOKE_TAG_A}"
           scripts/compose-smoke.sh
+
+  promote-stable:
+    name: Promote stable
+    needs: [publish, compose-smoke]
+    if: needs.publish.outputs.promote_stable == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Retag sha images as stable
+        env:
+          SHA_TAG: ${{ needs.publish.outputs.sha_tag }}
+        run: |
+          docker buildx imagetools create \
+            -t "${API_IMAGE}:stable" "${API_IMAGE}:${SHA_TAG}"
+          docker buildx imagetools create \
+            -t "${WEB_IMAGE}:stable" "${WEB_IMAGE}:${SHA_TAG}"

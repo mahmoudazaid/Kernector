@@ -29,8 +29,22 @@ docker compose up -d --pull always
 | MCP (`mcp`) | 8100 | `GET /healthz` |
 | `migrate` | (oneshot) | exits 0 before dependents start |
 
-Open `http://localhost:3000`. MCP clients use `http://127.0.0.1:8100/mcp`
-with a profile bearer from Admin → MCP Access.
+### First user (required to sign in)
+
+Compose installs start with an empty auth database and no public sign-up.
+Create the first local account inside the API container, then grant workspace
+access:
+
+```bash
+docker compose exec api python -m presentation.cli.create_user --username alice
+# prompts for password (no --password flag)
+
+docker compose exec api python -m presentation.cli.grant_workspace_access \
+  --username alice --all-existing-projects
+```
+
+Open `http://localhost:3000` and sign in. MCP clients use
+`http://127.0.0.1:8100/mcp` with a profile bearer from Admin → MCP Access.
 
 ## Initial configuration
 
