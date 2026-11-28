@@ -151,6 +151,19 @@ def test_run_sqlite_migrations_preserves_original_when_migrate_fails(
     assert any((tmp_path / "backups").iterdir())
 
 
+def test_run_sqlite_migrations_wraps_unreadable_db_as_migrate_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _settings_for(tmp_path, monkeypatch)
+    catalog = settings.document_catalog.sql_path
+    assert catalog is not None
+    catalog.parent.mkdir(parents=True, exist_ok=True)
+    catalog.write_bytes(b"not-a-sqlite-database")
+
+    with pytest.raises(MigrateSqliteError, match="could not back up"):
+        run_sqlite_migrations(settings, backup_root=tmp_path / "backups")
+
+
 def test_run_sqlite_migrations_skips_backup_when_already_current(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

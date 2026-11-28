@@ -138,11 +138,23 @@ Automatic image rollback is **not** implemented. If a release is unhealthy:
 
 1. Stop the stack: `docker compose stop`
 2. Confirm volume intact: `docker volume inspect kernector-data`
-3. Pin the previous known-good tag: `KERNECTOR_IMAGE_TAG=<previous> docker compose up -d`
-4. If a migration failed, `migrate` exits non-zero and API/MCP do not start;
-   original SQLite files remain, and a backup under `/data/catalog/backups/`
-   can be copied back over the live `.sqlite` files if needed
-5. Restore from an external `tar` backup if the volume was damaged
+3. Check whether the bad release migrated schemas: look at
+   `docker compose logs migrate` for `backups=` greater than `0`. Only the
+   newest five backups per label are kept under `/data/catalog/backups/`.
+4. If that release applied migrations, restore the newest
+   `/data/catalog/backups/<label>-*.sqlite` over each affected live database
+   **before** pinning an older image. Delete that database's live `-wal` /
+   `-shm` sidecars first so SQLite does not replay a stale WAL onto the
+   restored file. The previous image's `migrate` refuses a schema ahead of
+   what it ships (`unsupported schema version`), so pin-only rollback leaves
+   API/MCP down when the bad release already migrated.
+5. Then pin the previous known-good tag:
+   `KERNECTOR_IMAGE_TAG=<previous> docker compose up -d`
+6. If migrate failed *before* applying (exit non-zero, `backups=` may still
+   be `0` when the DB was already current or ahead), live SQLite files were
+   left untouched — pinning the previous tag is enough once the bad image is
+   no longer selected.
+7. Restore from an external `tar` backup if the volume was damaged
 
 ## Local build (contributors)
 

@@ -190,9 +190,9 @@ def run_sqlite_migrations(
         ("feedback", feedback_path, _FEEDBACK_MIGRATIONS),
     )
     for label, path, migrations_dir in targets:
-        if not _migration_pending(path, migrations_dir):
-            continue
         try:
+            if not _migration_pending(path, migrations_dir):
+                continue
             backups.append(backup_sqlite_file(path, backup_root, label=label))
         except (OSError, sqlite3.Error, CatalogError) as error:
             raise MigrateSqliteError(

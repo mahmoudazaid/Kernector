@@ -163,18 +163,22 @@ docker compose -p "$PROJECT" run --rm --no-deps \
   -e AUTH_SQL_PATH=/data/auth/auth.sqlite \
   api \
   python - <<'PY'
-from pathlib import Path
 import sqlite3
 from composition import load_runtime_settings
+from infrastructure.auth.sql_store import SqlAuthStore
 
 settings = load_runtime_settings()
 path = settings.document_catalog.sql_path
 assert path is not None
-# Original corrupted file still present (not wiped); backups exist.
+# Future-schema refusal writes nothing; live data must survive.
 assert path.exists()
-backups = list((path.parent / "backups").glob("catalog-*.sqlite"))
-assert backups, "expected pre-migrate backup"
-print("failure preserved data + backup")
+conn = sqlite3.connect(path)
+row = conn.execute("SELECT note FROM smoke_marker WHERE id = 1").fetchone()
+conn.close()
+assert row == ("persist-me",), row
+user = SqlAuthStore(settings.auth.sql_path).get_user_by_username("smoke-user")
+assert user is not None, "user wiped after migrate refusal"
+print("failure preserved live data")
 PY
 
 echo "compose smoke passed"
