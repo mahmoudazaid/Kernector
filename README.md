@@ -41,6 +41,18 @@ After chunking and embedding, passages land in Chroma with metadata that preserv
 
 When `DOMAIN_TOOL_PACKS` includes `software-delivery`, composition still wires the pack ask path, but with scaffolding tools retired (#285) every General-mode query stays on the ordinary RAG path. Intent matching returns `None` until a real tool and policy land under `packs/software_delivery/tools/`.
 
+## Self-hosted Docker Compose
+
+For a one-command install (API + UI + MCP with durable SQLite/Chroma volumes):
+
+```bash
+cp .env.example .env   # set ADMIN_API_TOKEN and AUTH_CSRF_KEY
+docker compose up -d --pull always
+```
+
+See [docs/self-hosted-docker.md](docs/self-hosted-docker.md).  
+**Warning:** `docker compose down -v` deletes local data.
+
 ## Next.js + FastAPI local workflow
 
 Next.js is the interactive UI; it talks HTTP to the FastAPI adapter under

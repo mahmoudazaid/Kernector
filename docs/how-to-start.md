@@ -1,6 +1,14 @@
 # How to start Kernector locally
 
-Run each process in its **own terminal** from the **repository root**
+For a one-command Docker install (API + UI + MCP), see
+[self-hosted-docker.md](self-hosted-docker.md):
+
+```bash
+cp .env.example .env
+docker compose up -d --pull always
+```
+
+Otherwise run each process in its **own terminal** from the **repository root**
 (unless noted). Copy `.env.example` → `.env` and `web/.env.example` →
 `web/.env.local` first if you have not already.
 

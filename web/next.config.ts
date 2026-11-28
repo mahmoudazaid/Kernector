@@ -58,6 +58,8 @@ const NOSNIFF_REFERRER = [
 ] as const;
 
 const nextConfig: NextConfig = {
+  // Required for the self-hosted Docker image (#486).
+  output: "standalone",
   experimental: {
     optimizePackageImports: ["motion"],
   },
