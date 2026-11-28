@@ -1,0 +1,143 @@
+# Kernector one-command self-hosted stack (#486).
+#
+# Install:
+#   cp .env.example .env   # set secrets
+#   docker compose up -d --pull always
+#
+# Update (reuse volumes):
+#   docker compose up -d --pull always
+#
+# WARNING: `docker compose down -v` deletes named volumes and local data.
+
+name: kernector
+
+x-api-image: &api-image
+  image: ghcr.io/mahmoudazaid/kernector-api:${KERNECTOR_IMAGE_TAG:-stable}
+  build:
+    context: .
+    dockerfile: deploy/docker/Dockerfile.api
+
+x-data-env: &data-env
+  DOCUMENT_CATALOG_SQL_PATH: /data/catalog/catalog.sqlite
+  DOCUMENT_CATALOG_WORKSPACE_ID: ${DOCUMENT_CATALOG_WORKSPACE_ID:-local}
+  AUTH_SQL_PATH: /data/auth/auth.sqlite
+  CHROMA_PERSIST_PATH: /data/chroma
+  DOCUMENT_UPLOAD_BLOB_PATH: /data/uploads
+  KNOWLEDGE_CORPUS_PATH: /data/knowledge/documents.json
+  GOOGLE_OAUTH_TOKEN_PATH: /data/google-oauth-connection.json
+  GOOGLE_OAUTH_STATE_PATH: /data/google-oauth-state.json
+  GITHUB_OAUTH_TOKEN_PATH: /data/github-oauth-connection.json
+  GITHUB_OAUTH_STATE_PATH: /data/github-oauth-state.json
+  JIRA_OAUTH_TOKEN_PATH: /data/jira-oauth-connection.json
+  JIRA_OAUTH_STATE_PATH: /data/jira-oauth-state.json
+  JIRA_DC_STATE_PATH: /data/jira-dc-state.json
+
+services:
+  migrate:
+    <<: *api-image
+    command: ["python", "-m", "presentation.cli.migrate_sqlite"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      <<: *data-env
+    volumes:
+      - kernector-data:/data
+    restart: "no"
+
+  api:
+    <<: *api-image
+    command:
+      [
+        "uvicorn",
+        "presentation.http.app:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+      ]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      <<: *data-env
+      HTTP_DEV_CORS: ${HTTP_DEV_CORS:-true}
+      HTTP_CORS_ORIGINS: ${HTTP_CORS_ORIGINS:-http://localhost:3000}
+    volumes:
+      - kernector-data:/data
+    ports:
+      - "${KERNECTOR_API_PORT:-8000}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  mcp:
+    <<: *api-image
+    command:
+      [
+        "uvicorn",
+        "presentation.mcp.app:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8100",
+      ]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      <<: *data-env
+      MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-127.0.0.1:8100,localhost:8100}
+    volumes:
+      - kernector-data:/data
+    ports:
+      - "${KERNECTOR_MCP_PORT:-8100}:8100"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8100/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  web:
+    image: ghcr.io/mahmoudazaid/kernector-web:${KERNECTOR_IMAGE_TAG:-stable}
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.web
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+        NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-Kernector}
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      API_BASE_URL: http://api:8000
+      ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:-}
+    ports:
+      - "${KERNECTOR_WEB_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/api/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+volumes:
+  kernector-data:
+    name: kernector-data

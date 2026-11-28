@@ -1,0 +1,47 @@
+# syntax=docker/dockerfile:1.7
+# Kernector API / MCP / migrate image (#486).
+FROM ghcr.io/astral-sh/uv:0.9.7-python3.13-bookworm-slim AS builder
+
+WORKDIR /app
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=0
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml uv.lock README.md ./
+COPY application application
+COPY composition composition
+COPY domain domain
+COPY infrastructure infrastructure
+COPY packs packs
+COPY presentation presentation
+
+RUN uv sync --frozen --no-dev --extra github --extra jira --extra google-drive
+
+FROM python:3.13-slim-bookworm AS runtime
+
+WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/app/.venv/bin:$PATH" \
+    KERNECTOR_DATA_DIR=/data
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system --gid 10001 kernector \
+    && useradd --system --uid 10001 --gid kernector --home /app kernector \
+    && mkdir -p /data \
+    && chown kernector:kernector /data
+
+COPY --from=builder --chown=kernector:kernector /app /app
+
+USER kernector
+VOLUME ["/data"]
+EXPOSE 8000 8100
+
+# Per-service healthchecks are defined in compose.yaml (api vs mcp).
+CMD ["uvicorn", "presentation.http.app:app", "--host", "0.0.0.0", "--port", "8000"]

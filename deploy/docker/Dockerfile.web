@@ -1,0 +1,48 @@
+# syntax=docker/dockerfile:1.7
+# Kernector Next.js UI image (#486).
+FROM node:22-bookworm-slim AS deps
+WORKDIR /app
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+
+FROM node:22-bookworm-slim AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY web/ ./
+
+# Browser-facing origins for local self-host (inlined at build time).
+ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+ARG NEXT_PUBLIC_SITE_URL=http://localhost:3000
+ARG NEXT_PUBLIC_APP_NAME=Kernector
+ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL \
+    NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL \
+    NEXT_PUBLIC_APP_NAME=$NEXT_PUBLIC_APP_NAME \
+    NEXT_TELEMETRY_DISABLED=1
+
+RUN npm run build
+
+FROM node:22-bookworm-slim AS runtime
+WORKDIR /app
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    PORT=3000 \
+    HOSTNAME=0.0.0.0 \
+    API_BASE_URL=http://api:8000
+
+RUN groupadd --system --gid 10001 kernector \
+    && useradd --system --uid 10001 --gid kernector --home /app kernector \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder --chown=kernector:kernector /app/public ./public
+COPY --from=builder --chown=kernector:kernector /app/.next/standalone ./
+COPY --from=builder --chown=kernector:kernector /app/.next/static ./.next/static
+
+USER kernector
+EXPOSE 3000
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=5 \
+  CMD curl -fsS http://127.0.0.1:3000/api/healthz || exit 1
+
+CMD ["node", "server.js"]
