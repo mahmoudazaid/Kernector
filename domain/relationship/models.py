@@ -17,6 +17,8 @@ from domain.relationship.errors import RelationshipInputError
 
 _IDENTIFIER = re.compile(r"[A-Za-z0-9_-]+")
 _TOKEN = re.compile(r"[a-z][a-z0-9_]*")
+# For deterministic edges, extractor_id is the canonical rule_id (#375).
+_EXTRACTOR_ID = re.compile(r"[a-z0-9_]+(?:\.[a-z0-9_]+)*")
 _RELATION_TYPE = re.compile(r"[a-z][a-z0-9_]*(?::[\w-]+)?", re.UNICODE)
 _MAX_IDENTIFIER_LENGTH = 64
 _MAX_TOKEN_LENGTH = 64
@@ -73,6 +75,20 @@ def _require_token(value: object, field_name: str) -> str:
         raise RelationshipInputError(
             f"{field_name} must fullmatch [a-z][a-z0-9_]* and be at most "
             f"{_MAX_TOKEN_LENGTH} characters"
+        )
+    return value
+
+
+def _require_extractor_id(value: object, field_name: str = "extractor_id") -> str:
+    """Validate producer id; for deterministic edges this is the rule_id."""
+    if not isinstance(value, str):
+        raise RelationshipInputError(
+            f"{field_name} must be a string, got {type(value).__name__}"
+        )
+    if len(value) > _MAX_TOKEN_LENGTH or not _EXTRACTOR_ID.fullmatch(value):
+        raise RelationshipInputError(
+            f"{field_name} must fullmatch [a-z0-9_]+(?:\\.[a-z0-9_]+)* and "
+            f"be at most {_MAX_TOKEN_LENGTH} characters"
         )
     return value
 
@@ -185,7 +201,11 @@ class UnresolvedKey:
 
 @dataclass(frozen=True, slots=True)
 class EvidenceRef:
-    """One observation that supports a relationship edge."""
+    """One observation that supports a relationship edge.
+
+    ``extractor_id`` is the producer id. For ``deterministic`` edges it is the
+    canonical ``rule_id`` (segmented token such as ``key_mention.tag``).
+    """
 
     source: SourceReference
     revision: str
@@ -199,7 +219,7 @@ class EvidenceRef:
             )
         _require_text(self.revision, "revision")
         _require_locator(self.locator)
-        _require_token(self.extractor_id, "extractor_id")
+        _require_extractor_id(self.extractor_id, "extractor_id")
 
 
 @dataclass(frozen=True, slots=True)

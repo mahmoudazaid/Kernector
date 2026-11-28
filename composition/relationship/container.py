@@ -1,14 +1,17 @@
-"""Build relationship store and use cases (#374)."""
+"""Build relationship store and use cases (#374, #375)."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from pathlib import Path
 
+from application.artifact.fanout_recorder import FanOutRelationshipRecorder
 from application.relationship.list import ListArtifactRelationships
+from application.relationship.match import MatchProjectReferences
 from application.relationship.record import RecordExplicitRelationships
 from domain.knowledge import SourceDocument, SourceType
 from domain.project.errors import ProjectNotFoundError
+from domain.relationship.matching import MatchLimits
+from infrastructure.catalog.sql_catalog import SqlDocumentCatalog
 from infrastructure.connectors.jira.link_extractor import (
     EXTRACTOR_ID,
     JiraExplicitLinkExtractor,
@@ -24,14 +27,27 @@ from composition.project.container import (
     build_resolve_projects_for_source,
 )
 
+RULE_CATALOGUE_VERSION = "software_delivery.matchers.v1"
+DEFAULT_MATCH_LIMITS = MatchLimits(
+    max_content_bytes=1_048_576,
+    max_mentions=100,
+    max_catalogue_entries=10_000,
+    max_compiled_pattern_size=65_536,
+)
+
 _INVERSE_NAMES_TARGET = (
     "packs.software_delivery.relationship.types:RELATION_INVERSE_NAMES"
 )
 
 
 def build_relationship_store(settings: Settings) -> SqlRelationshipStore:
-    path = Path(settings.document_catalog.sql_path)
-    return SqlRelationshipStore(path, settings.document_catalog.workspace_id)
+    from composition.artifact.container import _require_catalog_sql_path
+    from composition.container import _require_workspace_id
+
+    return SqlRelationshipStore(
+        _require_catalog_sql_path(settings),
+        _require_workspace_id(settings),
+    )
 
 
 def _jira_raw_from_document(source: SourceDocument) -> dict[str, object] | None:
@@ -81,6 +97,48 @@ def build_record_explicit_relationships(
         extractor_id=EXTRACTOR_ID,
         mapping_fingerprint=mapping.fingerprint(),
     )
+
+
+def build_match_project_references(settings: Settings) -> MatchProjectReferences:
+    """Build deterministic MatchProjectReferences when the pack is enabled."""
+    from packs.software_delivery.relationship.matchers import (
+        ApiOperationMentionMatcher,
+        KeyMentionDocMatcher,
+        KeyMentionHeaderMatcher,
+        KeyMentionTagMatcher,
+    )
+    from packs.software_delivery.relationship.types import CONTEXT_RELATIONS
+
+    from composition.artifact.container import _require_catalog_sql_path
+    from composition.container import _require_workspace_id
+
+    resolve = build_resolve_projects_for_source(settings)
+    return MatchProjectReferences(
+        build_relationship_store(settings),
+        build_artifact_index(settings),
+        SqlDocumentCatalog(
+            _require_catalog_sql_path(settings),
+            _require_workspace_id(settings),
+        ),
+        project_ids_for=resolve.execute,
+        matchers=(
+            KeyMentionTagMatcher(),
+            KeyMentionHeaderMatcher(),
+            KeyMentionDocMatcher(),
+            ApiOperationMentionMatcher(),
+        ),
+        limits=DEFAULT_MATCH_LIMITS,
+        rule_catalogue_version=RULE_CATALOGUE_VERSION,
+        context_relations=CONTEXT_RELATIONS,
+    )
+
+
+def build_relationship_recorders(settings: Settings) -> FanOutRelationshipRecorder:
+    """Fan-out provider-declared and deterministic recorders (#374/#375)."""
+    children: list = [build_record_explicit_relationships(settings)]
+    if "software-delivery" in settings.domain_tools.enabled_packs:
+        children.append(build_match_project_references(settings))
+    return FanOutRelationshipRecorder(children)
 
 
 def build_list_artifact_relationships(

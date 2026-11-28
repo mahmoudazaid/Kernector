@@ -1,19 +1,50 @@
-"""Ports for evidence-backed relationships (#374)."""
+"""Ports for evidence-backed relationships (#374, #375)."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
 from domain.artifact.models import ArtifactRef
 from domain.knowledge import SourceDocument, SourceReference
+from domain.relationship.matching import DeterministicMatcher, MatchRequest, MatchOutcome
 from domain.relationship.models import (
     EvidenceRef,
     ProviderLink,
     Relationship,
     UnresolvedKey,
 )
+
+# Re-export matcher port for composition imports.
+__all__ = (
+    "DeterministicEdgeWrite",
+    "DeterministicMatcher",
+    "ExplicitLinkExtractor",
+    "MatchOutcome",
+    "MatchRequest",
+    "RelationshipListFilters",
+    "RelationshipStore",
+    "WATERMARK_KIND_DETERMINISTIC",
+    "WATERMARK_KIND_PROVIDER_DECLARED",
+)
+
+WATERMARK_KIND_PROVIDER_DECLARED = "provider_declared"
+WATERMARK_KIND_DETERMINISTIC = "deterministic"
+
+
+@dataclass(frozen=True, slots=True)
+class DeterministicEdgeWrite:
+    """One resolved deterministic edge to persist in an owned-evidence replace."""
+
+    project_id: str
+    subject: ArtifactRef | UnresolvedKey
+    relation_type: str
+    object: ArtifactRef | UnresolvedKey
+    evidence: EvidenceRef
+    subject_aliases: tuple[str, ...] = ()
+    object_aliases: tuple[str, ...] = ()
 
 
 class RelationshipListFilters(Protocol):
@@ -102,15 +133,63 @@ class RelationshipStore(Protocol):
         """Return a relationship by id, or ``None``."""
 
     def set_record_watermark(
-        self, reference: SourceReference, links_fingerprint: str
+        self,
+        reference: SourceReference,
+        links_fingerprint: str,
+        *,
+        kind: str = WATERMARK_KIND_PROVIDER_DECLARED,
     ) -> None:
         """Record that relationships for ``reference`` were written successfully."""
 
-    def get_record_watermark(self, reference: SourceReference) -> str | None:
-        """Return the last successful links fingerprint, or ``None``."""
+    def get_record_watermark(
+        self,
+        reference: SourceReference,
+        *,
+        kind: str = WATERMARK_KIND_PROVIDER_DECLARED,
+    ) -> str | None:
+        """Return the last successful links fingerprint for ``kind``, or ``None``."""
 
-    def clear_record_watermark(self, reference: SourceReference) -> None:
-        """Drop the record watermark so a returning artifact re-records."""
+    def clear_record_watermark(
+        self,
+        reference: SourceReference,
+        *,
+        kind: str | None = None,
+    ) -> None:
+        """Drop watermarks for ``reference``.
+
+        When ``kind`` is ``None``, every kind for the source is cleared.
+        """
+
+    def replace_owned_deterministic_evidence(
+        self,
+        *,
+        source: SourceReference,
+        revision: str,
+        owned_rule_ids: frozenset[str],
+        edges: Sequence[DeterministicEdgeWrite],
+        watermark: str,
+        seen_at: str,
+    ) -> None:
+        """Atomically replace evidence owned by ``owned_rule_ids`` for ``source``.
+
+        Ownership is the exact registered rule-id set, never a prefix match.
+        Matching edges receive new revision evidence; disappeared edges keep
+        other evidence or retain last owned evidence and become ``removed``.
+        Existing origin and human decision fields are preserved. The
+        deterministic watermark is committed in the same transaction.
+        """
+
+    def mark_owned_deterministic_stale(
+        self,
+        *,
+        source: SourceReference,
+        owned_rule_ids: frozenset[str],
+        watermark: str,
+    ) -> None:
+        """Mark edges with owned evidence from ``source`` stale and set watermark.
+
+        Used for non-destructive bound failures: no evidence rows are removed.
+        """
 
 
 class ExplicitLinkExtractor(Protocol):

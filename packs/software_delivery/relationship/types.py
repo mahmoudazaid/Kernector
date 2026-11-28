@@ -11,4 +11,18 @@ RELATION_INVERSE_NAMES: Mapping[str, str] = {
     "child_of": "parent_of",
     "relates_to": "relates_to",
     "affects": "affected_by",
+    "automates": "automated_by",
+    "references": "referenced_by",
+    "describes": "described_by",
+    "exercises": "exercised_by",
+}
+
+# Subject context -> relation type for API-mention edges (#375).
+CONTEXT_RELATIONS: Mapping[str, str] = {
+    "business": "references",
+    "frontend": "references",
+    "backend": "references",
+    "operations": "references",
+    "testing": "exercises",
+    "documentation": "describes",
 }
