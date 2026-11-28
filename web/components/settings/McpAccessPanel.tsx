@@ -579,9 +579,16 @@ export function McpAccessPanel({
     const tokenDescription = description.trim();
     startTransition(async () => {
       try {
+        const { getAuthSession } = await import("@/lib/auth/session-store");
+        const userId = getAuthSession().user?.user_id?.trim() ?? "";
+        if (!userId) {
+          setActionError("Sign in before creating an MCP token.");
+          return;
+        }
         const created = await createProfile({
           project_id: projectId.trim(),
           name: tokenName,
+          user_id: userId,
           expires_at: expiresAtFromChoice(expiryChoice, customExpiryYmd),
           description: tokenDescription,
         });

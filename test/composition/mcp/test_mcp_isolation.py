@@ -132,7 +132,7 @@ def test_allowlist_update_rejects_isolation_unsafe_tools(tmp_path: Path) -> None
         tx.projects.add(Project("prj_a", "A", "a", 1))
     profiles = SqlMcpAccessProfileStore(catalog, "ws-a")
     created = CreateAccessProfile(store=profiles).execute(
-        CreateAccessProfileRequest(project_id="prj_a", name="dev")
+        CreateAccessProfileRequest(user_id='usr_test', project_id="prj_a", name="dev")
     )
     with pytest.raises(IsolationUnsafeToolError):
         UpdateAccessProfileAllowlist(store=profiles).execute(

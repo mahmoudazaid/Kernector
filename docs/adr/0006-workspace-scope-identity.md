@@ -3,7 +3,10 @@
 ## Status
 
 Accepted — Decisions 2, 3, 6, and 8 superseded for the live runtime by
-[ADR 0007](0007-retire-json-document-catalog.md).
+[ADR 0007](0007-retire-json-document-catalog.md). Decision 2’s product-request
+workspace source (env as sole selector) is further narrowed/superseded by
+[ADR 0014](0014-trusted-workspace-context.md) (#447 trusted selection from
+principal + membership; env remains bootstrap/catalog binding only).
 
 ## Context
 

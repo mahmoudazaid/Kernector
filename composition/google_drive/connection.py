@@ -196,6 +196,8 @@ def _sync_scope_label(connection) -> str | None:
 def start_google_drive_oauth(
     settings: Settings,
     *,
+    user_id: str,
+    workspace_id: str,
     state_store=None,
 ) -> str:
     """Issue CSRF state and return Google's authorization URL.
@@ -205,6 +207,8 @@ def start_google_drive_oauth(
 
     Args:
         settings (Settings): Loaded environment settings.
+        user_id: Trusted principal id bound into OAuth state (#447).
+        workspace_id: Trusted workspace id bound into OAuth state (#447).
         state_store: Injected state store for tests.
 
     Returns:
@@ -215,7 +219,7 @@ def start_google_drive_oauth(
     from infrastructure.connectors.google_drive.oauth import authorization_url
 
     store = state_store if state_store is not None else _state_store(settings)
-    state = store.issue()
+    state = store.issue(user_id=user_id, workspace_id=workspace_id)
     return authorization_url(
         settings.google_oauth,
         state=state,
@@ -229,6 +233,8 @@ def complete_google_drive_oauth(
     state: str | None,
     code: str | None,
     error: str | None,
+    user_id: str,
+    workspace_id: str,
     state_store=None,
     connection_store=None,
     gateway=None,
@@ -240,6 +246,8 @@ def complete_google_drive_oauth(
         state (str | None): CSRF token from Google.
         code (str | None): Authorization code from Google.
         error (str | None): Provider error such as ``access_denied``.
+        user_id: Trusted principal id required to consume OAuth state (#447).
+        workspace_id: Trusted workspace id required to consume OAuth state (#447).
         state_store: Injected state store for tests.
         connection_store: Injected connection store for tests.
         gateway: Injected Google token gateway for tests.
@@ -250,7 +258,7 @@ def complete_google_drive_oauth(
     if error == "access_denied":
         return _hub_redirect(settings, result="denied")
     store = state_store if state_store is not None else _state_store(settings)
-    if not store.consume(state):
+    if not store.consume(state, user_id=user_id, workspace_id=workspace_id):
         return _hub_redirect(settings, result="invalid_state")
     if error or not code:
         return _hub_redirect(settings, result="error")

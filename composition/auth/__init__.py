@@ -13,6 +13,14 @@ from composition.auth.project_access import (
     _UnitOfWorkProjectLookup,
     build_membership_grant_policy,
 )
+from composition.auth.trusted_context import (
+    NoActiveMembershipError,
+    TrustedWorkspaceSelectionRequiredError,
+    bootstrap_workspace_id_from_settings,
+    resolve_caller_for_principal,
+    resolve_trusted_project_access_caller,
+    select_trusted_workspace,
+)
 from composition.container import load_runtime_settings
 from domain.auth.csrf import csrf_tokens_match, derive_csrf_token
 from domain.auth.ports import AuthStore
@@ -83,6 +91,7 @@ class ResolvedSession:
     session_id: str
     principal: Principal
     csrf_token: str
+    selected_workspace_id: str | None = None
 
 
 def derive_session_csrf(settings: AuthSettings, session_id: str) -> str:
@@ -106,6 +115,7 @@ def resolve_session(
         session_id=session_id,
         principal=Principal(user_id=user.user_id, username=user.username),
         csrf_token=derive_session_csrf(settings, session_id),
+        selected_workspace_id=row.selected_workspace_id,
     )
 
 
@@ -262,9 +272,12 @@ __all__ = [
     "LoginFailedError",
     "LoginResult",
     "MembershipGrantProjectAccessPolicy",
+    "NoActiveMembershipError",
     "ResolvedSession",
+    "TrustedWorkspaceSelectionRequiredError",
     "WorkspaceAccessGrant",
     "auth_settings",
+    "bootstrap_workspace_id_from_settings",
     "build_auth_store",
     "build_login",
     "build_project_access_policy",
@@ -275,5 +288,8 @@ __all__ = [
     "grant_workspace_access",
     "put_preferences",
     "require_csrf",
+    "resolve_caller_for_principal",
     "resolve_session",
+    "resolve_trusted_project_access_caller",
+    "select_trusted_workspace",
 ]

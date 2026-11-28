@@ -50,7 +50,7 @@ def test_create_returns_plaintext_once_and_default_deny_allowlist(
 ) -> None:
     create = CreateAccessProfile(store=profile_store)
     created = create.execute(
-        CreateAccessProfileRequest(project_id="prj_alpha", name="cursor-dev")
+        CreateAccessProfileRequest(user_id='usr_test', project_id="prj_alpha", name="cursor-dev")
     )
 
     assert created.plaintext_token
@@ -90,10 +90,10 @@ def test_multiple_profiles_may_bind_same_project(
 ) -> None:
     create = CreateAccessProfile(store=profile_store)
     first = create.execute(
-        CreateAccessProfileRequest(project_id="prj_alpha", name="cursor")
+        CreateAccessProfileRequest(user_id='usr_test', project_id="prj_alpha", name="cursor")
     )
     second = create.execute(
-        CreateAccessProfileRequest(project_id="prj_alpha", name="ci")
+        CreateAccessProfileRequest(user_id='usr_test', project_id="prj_alpha", name="ci")
     )
     assert first.profile.profile_id != second.profile.profile_id
     assert {p.name for p in ListAccessProfiles(store=profile_store).execute()} == {
@@ -111,7 +111,7 @@ def test_create_rejects_project_from_other_workspace(catalog_path: Path) -> None
     create = CreateAccessProfile(store=store)
     with pytest.raises(ProjectNotInWorkspaceError):
         create.execute(
-            CreateAccessProfileRequest(project_id="prj_other", name="bad")
+            CreateAccessProfileRequest(user_id='usr_test', project_id="prj_other", name="bad")
         )
 
 
@@ -120,7 +120,7 @@ def test_create_normalizes_future_expires_at(
 ) -> None:
     future = (datetime.now(UTC) + timedelta(days=7)).replace(microsecond=0)
     created = CreateAccessProfile(store=profile_store).execute(
-        CreateAccessProfileRequest(
+        CreateAccessProfileRequest(user_id='usr_test', 
             project_id="prj_alpha",
             name="expiring",
             expires_at=future.isoformat().replace("+00:00", "Z"),
@@ -144,7 +144,7 @@ def test_create_rejects_invalid_or_past_expires_at(
 ) -> None:
     with pytest.raises(InvalidAccessProfileExpirationError):
         CreateAccessProfile(store=profile_store).execute(
-            CreateAccessProfileRequest(
+            CreateAccessProfileRequest(user_id='usr_test', 
                 project_id="prj_alpha",
                 name="bad-expiry",
                 expires_at=expires_at,
@@ -157,7 +157,7 @@ def test_set_expiration_rejects_unparseable(
     profile_store: SqlMcpAccessProfileStore,
 ) -> None:
     created = CreateAccessProfile(store=profile_store).execute(
-        CreateAccessProfileRequest(project_id="prj_alpha", name="cursor")
+        CreateAccessProfileRequest(user_id='usr_test', project_id="prj_alpha", name="cursor")
     )
     with pytest.raises(InvalidAccessProfileExpirationError):
         SetAccessProfileExpiration(store=profile_store).execute(

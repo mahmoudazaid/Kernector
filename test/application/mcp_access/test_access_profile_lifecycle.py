@@ -36,7 +36,7 @@ def profile_store(catalog_path: Path) -> SqlMcpAccessProfileStore:
 
 def _create(store: SqlMcpAccessProfileStore):
     return CreateAccessProfile(store=store).execute(
-        CreateAccessProfileRequest(project_id="prj_alpha", name="cursor")
+        CreateAccessProfileRequest(user_id='usr_test', project_id="prj_alpha", name="cursor")
     )
 
 

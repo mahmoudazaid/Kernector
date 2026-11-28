@@ -54,6 +54,7 @@ class StoredSession:
     expires_at: str
     created_at: str
     revoked_at: str | None = None
+    selected_workspace_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

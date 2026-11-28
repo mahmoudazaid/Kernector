@@ -56,6 +56,7 @@ def _normalize_expires_at(expires_at: str | None, *, now: str) -> str | None:
 class CreateAccessProfileRequest:
     project_id: str
     name: str
+    user_id: str
     expires_at: str | None = None
     description: str = ""
 
@@ -68,6 +69,10 @@ class CreatedAccessProfile:
     plaintext_token: str
 
 
+AccessProfileCreateGate = Callable[[str, str, str], None]
+"""Validate ``(user_id, workspace_id, project_id)`` before insert (#447)."""
+
+
 class CreateAccessProfile:
     """Create an independent MCP access profile bound to a project."""
 
@@ -78,18 +83,26 @@ class CreateAccessProfile:
         new_id: Callable[[], str] = new_access_profile_id,
         new_token: Callable[[], str] = generate_access_token,
         clock: Callable[[], str] = _now,
+        create_gate: AccessProfileCreateGate | None = None,
     ) -> None:
         self._store = store
         self._new_id = new_id
         self._new_token = new_token
         self._clock = clock
+        self._create_gate = create_gate
 
     def execute(self, request: CreateAccessProfileRequest) -> CreatedAccessProfile:
         name = request.name.strip() if isinstance(request.name, str) else ""
         if not name:
             raise ValueError("name must be non-blank")
+        user_id = request.user_id.strip() if isinstance(request.user_id, str) else ""
+        if not user_id:
+            raise ValueError("user_id must be non-blank")
         if not self._store.project_exists(request.project_id):
             raise ProjectNotInWorkspaceError(request.project_id)
+        workspace_id = _workspace_id(self._store)
+        if self._create_gate is not None:
+            self._create_gate(user_id, workspace_id, request.project_id)
         plaintext = self._new_token()
         now = self._clock()
         description = (
@@ -100,7 +113,7 @@ class CreateAccessProfile:
         expires_at = _normalize_expires_at(request.expires_at, now=now)
         profile = McpAccessProfile(
             profile_id=self._new_id(),
-            workspace_id=_workspace_id(self._store),
+            workspace_id=workspace_id,
             project_id=request.project_id,
             name=name,
             allowlist=frozenset(),
@@ -110,6 +123,7 @@ class CreateAccessProfile:
             created_at=now,
             updated_at=now,
             description=description,
+            user_id=user_id,
         )
         self._store.add(profile)
         return CreatedAccessProfile(profile=profile, plaintext_token=plaintext)

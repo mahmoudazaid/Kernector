@@ -108,13 +108,15 @@ uv run python -m presentation.cli.grant_workspace_access \
 Omitting both `--project-id` and `--all-existing-projects` is an error — it
 never means access to every project. Active membership alone does not grant
 projects; each grant is stored explicitly (#446). Permission/RBAC evaluation
-is #456; applying the policy on HTTP/MCP routes is #447.
+is #456. Trusted HTTP/MCP callers and authorization-before-retrieval are #447
+(ADR 0014); that story unblocks #269 and #449.
 
 Sign in at `/login`. Auth and preferences go through the Next.js same-origin
 BFF (`/api/v1/auth/*`, `/api/v1/me/preferences`). See
-[ADR 0013](docs/adr/0013-local-user-auth-and-preferences.md). The Hub requires
-a session for every product page (browser gate only — FastAPI product routes
-still accept anonymous calls until #447).
+[ADR 0013](docs/adr/0013-local-user-auth-and-preferences.md) and
+[ADR 0014](docs/adr/0014-trusted-workspace-context.md). The Hub requires a
+session for every product page; FastAPI product routes also require
+membership-backed trusted callers.
 
 ### Run the MCP Streamable HTTP server
 

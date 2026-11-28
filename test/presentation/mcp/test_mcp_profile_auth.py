@@ -26,23 +26,38 @@ def catalog_path(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def mcp_hosts(monkeypatch: pytest.MonkeyPatch, catalog_path: Path) -> None:
+def mcp_hosts(
+    monkeypatch: pytest.MonkeyPatch, catalog_path: Path, tmp_path: Path
+) -> None:
     monkeypatch.setenv("MCP_ALLOWED_HOSTS", "testserver,127.0.0.1:8000,localhost:8000")
     monkeypatch.setenv("MCP_ALLOWED_ORIGINS", "")
     monkeypatch.setenv("DOCUMENT_CATALOG_WORKSPACE_ID", "ws-a")
     monkeypatch.setenv("DOCUMENT_CATALOG_SQL_PATH", str(catalog_path))
+    monkeypatch.setenv("AUTH_SQL_PATH", str(tmp_path / "auth.sqlite"))
+    monkeypatch.setenv("AUTH_CSRF_KEY", "test-csrf-key-32-bytes-long!!!!")
     monkeypatch.delenv("MCP_AUTH_TOKEN", raising=False)
     monkeypatch.delenv("MCP_TOOL_ALLOWLIST", raising=False)
     monkeypatch.delenv("MCP_ACCESS_PROFILE", raising=False)
 
 
 def _seed_profile(catalog_path: Path) -> str:
+    from composition.auth import build_auth_store, clear_auth_store_cache
+    from presentation.http.deps import get_settings
+
+    clear_auth_store_cache()
+    get_settings.cache_clear()
     projects = SqlProjectStore(catalog_path, "ws-a")
     with projects.transaction() as tx:
         tx.projects.add(Project("prj_alpha", "Alpha", "alpha", 1))
+    auth = build_auth_store(get_settings())
+    user = auth.create_user("mcp-alice", "secret-password")
+    auth.grant_membership(user.user_id, "ws-a")
+    auth.grant_project(user.user_id, "ws-a", "prj_alpha")
     store = SqlMcpAccessProfileStore(catalog_path, "ws-a")
     created = CreateAccessProfile(store=store).execute(
-        CreateAccessProfileRequest(project_id="prj_alpha", name="cursor")
+        CreateAccessProfileRequest(
+            user_id=user.user_id, project_id="prj_alpha", name="cursor"
+        )
     )
     return created.plaintext_token
 

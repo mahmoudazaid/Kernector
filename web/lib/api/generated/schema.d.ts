@@ -1493,6 +1493,8 @@ export interface components {
       name: string;
       /** Project Id */
       project_id: string;
+      /** User Id */
+      user_id: string;
     };
     /**
      * CreateProjectBody
@@ -2289,6 +2291,8 @@ export interface components {
       status: string;
       /** Updated At */
       updated_at: string;
+      /** User Id */
+      user_id?: string | null;
     };
     /**
      * McpServerInfoResponse

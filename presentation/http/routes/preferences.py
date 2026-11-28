@@ -1,4 +1,4 @@
-"""Per-user preferences routes (#182)."""
+"""Per-user preferences and workspace selection routes (#182, #447)."""
 
 from __future__ import annotations
 
@@ -12,7 +12,13 @@ from application.auth.preferences import (
     catalog_allows_pair,
     project_preferences,
 )
-from composition.auth import build_auth_store, require_csrf, resolve_session
+from composition.auth import (
+    NoActiveMembershipError,
+    build_auth_store,
+    require_csrf,
+    resolve_session,
+    resolve_trusted_project_access_caller,
+)
 from presentation.http.auth_session import (
     CSRF_HEADER,
     with_no_store,
@@ -32,6 +38,14 @@ class PreferencesResponse(BaseModel):
 class PreferencesUpdate(BaseModel):
     provider: str = Field(min_length=1)
     model: str = Field(min_length=1)
+
+
+class WorkspaceSelectionUpdate(BaseModel):
+    workspace_id: str = Field(min_length=1, max_length=64)
+
+
+class WorkspaceSelectionResponse(BaseModel):
+    workspace_id: str
 
 
 def _unauthorized() -> HTTPException:
@@ -121,3 +135,40 @@ def put_preferences(
         model=view.model,
         usable=view.usable,
     )
+
+
+@router.put(
+    "/workspace",
+    responses=problem_responses(401, 403, 500),
+)
+def put_workspace_selection(
+    body: WorkspaceSelectionUpdate,
+    request: Request,
+    response: Response,
+    x_csrf_token: Annotated[str | None, Header(alias=CSRF_HEADER)] = None,
+) -> WorkspaceSelectionResponse:
+    """Persist a membership-validated workspace selection on the session (#447)."""
+    settings = get_settings()
+    auth = settings.auth
+    store = build_auth_store(settings)
+    resolved = resolve_session(
+        store, auth, request.cookies.get(auth.cookie_name)
+    )
+    if resolved is None:
+        raise _unauthorized()
+    if not require_csrf(x_csrf_token, resolved.csrf_token):
+        raise HTTPException(status_code=403, detail="CSRF validation failed")
+    try:
+        caller = resolve_trusted_project_access_caller(
+            resolved.principal, body.workspace_id, store
+        )
+    except NoActiveMembershipError as error:
+        raise HTTPException(
+            status_code=403,
+            detail="Workspace membership is required.",
+        ) from error
+    store.set_session_selected_workspace(
+        resolved.session_id, caller.workspace_id
+    )
+    with_no_store(response)
+    return WorkspaceSelectionResponse(workspace_id=caller.workspace_id)

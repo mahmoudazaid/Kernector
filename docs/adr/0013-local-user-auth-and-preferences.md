@@ -110,6 +110,7 @@ Permission catalog and RBAC evaluation remain
 - [ADR 0006](0006-workspace-scope-identity.md)
 - [#182](https://github.com/mahmoudazaid/Kernector/issues/182)
 - [#446](https://github.com/mahmoudazaid/Kernector/issues/446)
-- [#447](https://github.com/mahmoudazaid/Kernector/issues/447)
+- [#447](https://github.com/mahmoudazaid/Kernector/issues/447) /
+  [ADR 0014](0014-trusted-workspace-context.md) (trusted HTTP/MCP context)
 - [#456](https://github.com/mahmoudazaid/Kernector/issues/456)
 - [#457](https://github.com/mahmoudazaid/Kernector/issues/457)

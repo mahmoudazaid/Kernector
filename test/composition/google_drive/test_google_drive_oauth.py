@@ -108,14 +108,16 @@ def test_start_without_oauth_client_returns_hub_redirect(
     monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_ID", raising=False)
     monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_SECRET", raising=False)
     monkeypatch.delenv("GOOGLE_OAUTH_REDIRECT_URI", raising=False)
-    url = start_google_drive_oauth(load_settings())
+    url = start_google_drive_oauth(
+        load_settings(), user_id="usr_a", workspace_id="ws_a"
+    )
     assert url.endswith("drive=unconfigured")
     assert "accounts.google.com" not in url
 
 
 def test_start_issues_state_and_returns_google_url(settings) -> None:
     store = GoogleOAuthStateStore(settings.google_oauth.state_path, ttl_seconds=600)
-    url = start_google_drive_oauth(settings, state_store=store)
+    url = start_google_drive_oauth(settings, user_id='usr_a', workspace_id='ws_a', state_store=store)
 
     assert url.startswith("https://accounts.google.com/o/oauth2/v2/auth")
     assert "client-secret" not in url
@@ -126,8 +128,7 @@ def test_start_issues_state_and_returns_google_url(settings) -> None:
 
 def test_callback_denied_does_not_persist(settings) -> None:
     store = GoogleOAuthConnectionStore(settings.google_oauth.token_path)
-    url = complete_google_drive_oauth(
-        settings,
+    url = complete_google_drive_oauth(settings, user_id='usr_a', workspace_id='ws_a',
         state=None,
         code=None,
         error="access_denied",
@@ -143,10 +144,9 @@ def test_callback_rejects_replayed_state(settings) -> None:
     states = GoogleOAuthStateStore(settings.google_oauth.state_path, ttl_seconds=600)
     tokens = GoogleOAuthConnectionStore(settings.google_oauth.token_path)
     gateway = FakeGateway()
-    state = states.issue()
+    state = states.issue(user_id='usr_a', workspace_id='ws_a')
 
-    first = complete_google_drive_oauth(
-        settings,
+    first = complete_google_drive_oauth(settings, user_id='usr_a', workspace_id='ws_a',
         state=state,
         code="4/auth-code",
         error=None,
@@ -154,8 +154,7 @@ def test_callback_rejects_replayed_state(settings) -> None:
         connection_store=tokens,
         gateway=gateway,
     )
-    second = complete_google_drive_oauth(
-        settings,
+    second = complete_google_drive_oauth(settings, user_id='usr_a', workspace_id='ws_a',
         state=state,
         code="4/auth-code",
         error=None,
@@ -198,9 +197,8 @@ def test_callback_reconnect_keeps_saved_scope(settings) -> None:
             files=(),
         )
     )
-    state = states.issue()
-    url = complete_google_drive_oauth(
-        settings,
+    state = states.issue(user_id='usr_a', workspace_id='ws_a')
+    url = complete_google_drive_oauth(settings, user_id='usr_a', workspace_id='ws_a',
         state=state,
         code="4/auth-code",
         error=None,
@@ -242,9 +240,8 @@ def test_callback_reconnect_as_other_account_resets_scope(settings) -> None:
             files=(),
         )
     )
-    state = states.issue()
-    url = complete_google_drive_oauth(
-        settings,
+    state = states.issue(user_id='usr_a', workspace_id='ws_a')
+    url = complete_google_drive_oauth(settings, user_id='usr_a', workspace_id='ws_a',
         state=state,
         code="4/auth-code",
         error=None,
@@ -281,9 +278,8 @@ def test_callback_reconnect_with_unknown_stored_email_resets_scope(
             files=(),
         )
     )
-    state = states.issue()
-    url = complete_google_drive_oauth(
-        settings,
+    state = states.issue(user_id='usr_a', workspace_id='ws_a')
+    url = complete_google_drive_oauth(settings, user_id='usr_a', workspace_id='ws_a',
         state=state,
         code="4/auth-code",
         error=None,
@@ -323,9 +319,8 @@ def test_callback_reconnect_with_unknown_email_drops_scope(settings) -> None:
             files=(),
         )
     )
-    state = states.issue()
-    url = complete_google_drive_oauth(
-        settings,
+    state = states.issue(user_id='usr_a', workspace_id='ws_a')
+    url = complete_google_drive_oauth(settings, user_id='usr_a', workspace_id='ws_a',
         state=state,
         code="4/auth-code",
         error=None,
@@ -353,9 +348,8 @@ def test_callback_reconnect_with_unknown_email_drops_scope(settings) -> None:
 def test_callback_first_connect_with_unknown_email_is_not_revoked(settings) -> None:
     states = GoogleOAuthStateStore(settings.google_oauth.state_path, ttl_seconds=600)
     tokens = GoogleOAuthConnectionStore(settings.google_oauth.token_path)
-    state = states.issue()
-    url = complete_google_drive_oauth(
-        settings,
+    state = states.issue(user_id='usr_a', workspace_id='ws_a')
+    url = complete_google_drive_oauth(settings, user_id='usr_a', workspace_id='ws_a',
         state=state,
         code="4/auth-code",
         error=None,
@@ -398,9 +392,8 @@ def test_callback_reconnect_after_unverified_probe_resets_on_other_account(
             account_email_unverified=True,
         )
     )
-    state = states.issue()
-    url = complete_google_drive_oauth(
-        settings,
+    state = states.issue(user_id='usr_a', workspace_id='ws_a')
+    url = complete_google_drive_oauth(settings, user_id='usr_a', workspace_id='ws_a',
         state=state,
         code="4/auth-code",
         error=None,

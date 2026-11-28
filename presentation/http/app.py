@@ -202,6 +202,21 @@ def create_app(*, cors_origins: Sequence[str] | None = None) -> FastAPI:
                 instance=str(request.url.path),
             )
             return _problem_response(problem, headers=exc.headers)
+        if exc.status_code == 403:
+            detail = (
+                str(exc.detail)
+                if isinstance(exc.detail, str) and exc.detail
+                else "Forbidden."
+            )
+            problem = Problem(
+                type="https://kernector.dev/problems/forbidden",
+                title="Forbidden",
+                status=403,
+                detail=detail,
+                code="forbidden",
+                instance=str(request.url.path),
+            )
+            return _problem_response(problem, headers=exc.headers)
         problem = Problem(
             type=f"https://kernector.dev/problems/http_{exc.status_code}",
             title="HTTP error",

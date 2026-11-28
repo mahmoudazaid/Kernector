@@ -5,9 +5,12 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from composition.mcp.isolation import is_isolation_safe
+
+if TYPE_CHECKING:
+    from domain.project.access import ProjectAccessCaller
 
 
 class MissingCallerContextError(Exception):
@@ -43,17 +46,40 @@ def bind_caller(caller: McpCallerContext):
 class McpCallerContext:
     """Authenticated caller for one MCP request.
 
+    Trusted workspace/user identity is taken from ``ProjectAccessCaller`` so
+    copied fields cannot drift (#447). Tool arguments never override these.
+
     Attributes:
-        workspace_id: Server-bound workspace (never from client args).
+        workspace_id: Trusted workspace from resolved access caller.
         profile_id: Access-profile id.
         project_id: Trusted project binding (never from client args).
         allowlist: Tool ids the profile may use.
+        user_id: Acting principal id from resolved access caller.
     """
 
     workspace_id: str
     profile_id: str
     project_id: str
     allowlist: frozenset[str]
+    user_id: str = ""
+
+    @classmethod
+    def from_access_caller(
+        cls,
+        access_caller: ProjectAccessCaller,
+        *,
+        profile_id: str,
+        project_id: str,
+        allowlist: frozenset[str],
+    ) -> McpCallerContext:
+        """Build context from a membership-verified ``ProjectAccessCaller``."""
+        return cls(
+            workspace_id=access_caller.workspace_id,
+            profile_id=profile_id,
+            project_id=project_id,
+            allowlist=allowlist,
+            user_id=access_caller.principal.user_id,
+        )
 
 
 class CallerContextResolver(Protocol):
