@@ -8,6 +8,7 @@ SQLite files.
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -15,13 +16,16 @@ from pathlib import Path
 
 from application.errors import ConfigurationError
 from infrastructure.catalog.errors import CatalogError
-from infrastructure.catalog.sql_schema import apply_migrations
+from infrastructure.catalog.sql_schema import apply_migrations, current_schema_version
 from infrastructure.config import Settings
 
 _INFRA = Path(__file__).resolve().parents[2] / "infrastructure"
+_CATALOG_MIGRATIONS = _INFRA / "catalog" / "migrations"
 _AUTH_MIGRATIONS = _INFRA / "auth" / "migrations"
 _FEEDBACK_MIGRATIONS = _INFRA / "feedback" / "migrations"
 _WORKSPACE_STORE_MIGRATIONS = _INFRA / "workspace_store" / "migrations"
+_MIGRATION_NAME = re.compile(r"^(\d+)_.+\.sql$")
+_DEFAULT_BACKUP_KEEP = 5
 
 
 class MigrateSqliteError(RuntimeError):
@@ -68,6 +72,58 @@ def backup_sqlite_file(source: Path, dest_dir: Path, *, label: str) -> Path:
     return dest
 
 
+def prune_sqlite_backups(
+    dest_dir: Path, *, label: str, keep: int = _DEFAULT_BACKUP_KEEP
+) -> tuple[Path, ...]:
+    """Delete older ``{label}-*.sqlite`` backups, keeping the newest ``keep``.
+
+    Args:
+        dest_dir: Backup directory.
+        label: Backup label prefix (for example ``catalog``).
+        keep: Number of newest backups to retain. ``0`` deletes all.
+
+    Returns:
+        tuple[Path, ...]: Paths that were deleted.
+    """
+    if keep < 0:
+        raise ValueError("keep must be >= 0")
+    if not dest_dir.is_dir():
+        return ()
+    matches = sorted(
+        (
+            path
+            for path in dest_dir.glob(f"{label}-*.sqlite")
+            if path.is_file()
+        ),
+        key=lambda path: path.name,
+        reverse=True,
+    )
+    deleted: list[Path] = []
+    for path in matches[keep:]:
+        path.unlink(missing_ok=True)
+        deleted.append(path)
+    return tuple(deleted)
+
+
+def _latest_shipped_version(migrations_dir: Path) -> int:
+    latest = 0
+    if not migrations_dir.is_dir():
+        return latest
+    for file_path in migrations_dir.iterdir():
+        match = _MIGRATION_NAME.match(file_path.name)
+        if match is None:
+            continue
+        latest = max(latest, int(match.group(1)))
+    return latest
+
+
+def _migration_pending(path: Path, migrations_dir: Path) -> bool:
+    """Return True when ``path`` exists and is behind shipped migrations."""
+    if not path.exists():
+        return False
+    return current_schema_version(path) < _latest_shipped_version(migrations_dir)
+
+
 def _workspace_store_path(settings: Settings) -> Path:
     store_path = Path("data/workspace_store/workspace.sqlite")
     if settings.document_catalog.sql_path is not None:
@@ -90,13 +146,20 @@ def run_sqlite_migrations(
     settings: Settings,
     *,
     backup_root: Path | None = None,
+    keep: int = _DEFAULT_BACKUP_KEEP,
 ) -> MigrateSqliteResult:
-    """Back up existing SQLite files (when present) then apply all migrations.
+    """Back up pending SQLite files then apply all migrations.
+
+    Backups run only when a database exists and is behind the shipped
+    migrations for that store. After a successful run, only the newest
+    ``keep`` backups per label are retained under ``backup_root``.
 
     Args:
         settings: Runtime settings with catalog and auth paths.
         backup_root: Directory for pre-migrate copies. Defaults to
             ``<catalog-parent>/backups``.
+        keep: Newest backups to retain per label after a successful run
+            (default ``5``).
 
     Returns:
         MigrateSqliteResult: Resolved database paths and backup files created.
@@ -121,21 +184,20 @@ def run_sqlite_migrations(
 
     backups: list[Path] = []
     targets = (
-        ("catalog", catalog_path),
-        ("auth", auth_path),
-        ("workspace_store", workspace_path),
-        ("feedback", feedback_path),
+        ("catalog", catalog_path, _CATALOG_MIGRATIONS),
+        ("auth", auth_path, _AUTH_MIGRATIONS),
+        ("workspace_store", workspace_path, _WORKSPACE_STORE_MIGRATIONS),
+        ("feedback", feedback_path, _FEEDBACK_MIGRATIONS),
     )
-    for label, path in targets:
-        if path.exists():
-            try:
-                backups.append(
-                    backup_sqlite_file(path, backup_root, label=label)
-                )
-            except (OSError, sqlite3.Error) as error:
-                raise MigrateSqliteError(
-                    f"could not back up {path}: {error}"
-                ) from error
+    for label, path, migrations_dir in targets:
+        if not _migration_pending(path, migrations_dir):
+            continue
+        try:
+            backups.append(backup_sqlite_file(path, backup_root, label=label))
+        except (OSError, sqlite3.Error, CatalogError) as error:
+            raise MigrateSqliteError(
+                f"could not back up {path}: {error}"
+            ) from error
 
     try:
         apply_migrations(catalog_path)
@@ -144,6 +206,9 @@ def run_sqlite_migrations(
         apply_migrations(feedback_path, migrations_dir=_FEEDBACK_MIGRATIONS)
     except (CatalogError, OSError, RuntimeError) as error:
         raise MigrateSqliteError(str(error)) from error
+
+    for label, _path, _migrations_dir in targets:
+        prune_sqlite_backups(backup_root, label=label, keep=keep)
 
     return MigrateSqliteResult(
         catalog_path=catalog_path,

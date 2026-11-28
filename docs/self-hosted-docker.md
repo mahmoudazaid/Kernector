@@ -95,7 +95,7 @@ Named volume `kernector-data` → `/data`:
 | `/data/uploads` | Uploaded document blobs |
 | `/data/knowledge` | Optional corpus file |
 | `/data/*-oauth-*.json` / `jira-dc-*.json` | Connector grants/state when used |
-| `/data/catalog/backups/` | Pre-migrate SQLite copies |
+| `/data/catalog/backups/` | Pre-migrate SQLite copies (only when a DB is behind shipped migrations; newest 5 per label retained, configurable via `migrate_sqlite --keep`) |
 
 **Warning:** `docker compose down -v` removes `kernector-data` and deletes
 local customer data.
@@ -113,8 +113,10 @@ docker compose start
 
 Restore into an empty volume, then `docker compose up -d`.
 
-Pre-migrate SQLite copies also land under `/data/catalog/backups/` on each
-migrate run when databases already exist.
+Pre-migrate SQLite copies also land under `/data/catalog/backups/` when a
+database exists and still needs a shipped migration. Idempotent re-runs that
+find every DB already current skip new backups. After a successful migrate,
+only the newest five backups per label are kept (`--keep`, default `5`).
 
 ## Version pinning
 

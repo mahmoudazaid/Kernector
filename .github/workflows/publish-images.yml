@@ -149,15 +149,28 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Resolve upgrade base
+        id: base
+        run: |
+          if docker buildx imagetools inspect "${API_IMAGE}:stable" >/dev/null 2>&1; then
+            echo "tag=stable" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ needs.publish.outputs.sha_tag }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Pull published images and smoke
         env:
-          SMOKE_TAG_A: ${{ needs.publish.outputs.sha_tag }}
+          SMOKE_TAG_A: ${{ steps.base.outputs.tag }}
           SMOKE_TAG_B: ${{ needs.publish.outputs.sha_tag }}
           SMOKE_SKIP_BUILD: "1"
         run: |
           chmod +x scripts/compose-smoke.sh
           docker pull "${{ env.API_IMAGE }}:${SMOKE_TAG_A}"
           docker pull "${{ env.WEB_IMAGE }}:${SMOKE_TAG_A}"
+          if [[ "${SMOKE_TAG_A}" != "${SMOKE_TAG_B}" ]]; then
+            docker pull "${{ env.API_IMAGE }}:${SMOKE_TAG_B}"
+            docker pull "${{ env.WEB_IMAGE }}:${SMOKE_TAG_B}"
+          fi
           scripts/compose-smoke.sh
 
   promote-stable:

@@ -48,6 +48,15 @@ def main(
         default=None,
         help="Directory for pre-migrate SQLite copies (default: <catalog>/backups)",
     )
+    parser.add_argument(
+        "--keep",
+        type=int,
+        default=5,
+        help=(
+            "Newest backups to retain per database label after a successful "
+            "run (default: 5)"
+        ),
+    )
     try:
         args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     except SystemExit as error:
@@ -55,9 +64,13 @@ def main(
             return 0
         return 2
 
+    if args.keep < 0:
+        print("migrate failed: --keep must be >= 0", file=sys.stderr)
+        return 2
+
     try:
         settings = load_settings()
-        result = migrate(settings, backup_root=args.backup_dir)
+        result = migrate(settings, backup_root=args.backup_dir, keep=args.keep)
     except (ConfigurationError, MigrateSqliteError) as error:
         print(f"migrate failed: {error}", file=sys.stderr)
         return 2

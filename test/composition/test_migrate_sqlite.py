@@ -12,6 +12,7 @@ from composition.sqlite_migrate import (
     MigrateSqliteError,
     MigrateSqliteResult,
     backup_sqlite_file,
+    prune_sqlite_backups,
     run_sqlite_migrations,
 )
 from infrastructure.catalog.sql_schema import apply_migrations, current_schema_version
@@ -49,14 +50,17 @@ def test_run_sqlite_migrations_is_idempotent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     settings = _settings_for(tmp_path, monkeypatch)
-    first = run_sqlite_migrations(settings, backup_root=tmp_path / "backups")
+    backup_root = tmp_path / "backups"
+    first = run_sqlite_migrations(settings, backup_root=backup_root)
     catalog_version = current_schema_version(first.catalog_path)
     auth_version = current_schema_version(first.auth_path)
 
-    second = run_sqlite_migrations(settings, backup_root=tmp_path / "backups")
+    second = run_sqlite_migrations(settings, backup_root=backup_root)
 
     assert current_schema_version(second.catalog_path) == catalog_version
     assert current_schema_version(second.auth_path) == auth_version
+    assert second.backups == ()
+    assert not backup_root.exists() or list(backup_root.glob("*.sqlite")) == []
 
 
 def test_run_sqlite_migrations_backs_up_existing_sqlite_before_migrate(
@@ -66,7 +70,7 @@ def test_run_sqlite_migrations_backs_up_existing_sqlite_before_migrate(
     catalog = settings.document_catalog.sql_path
     assert catalog is not None
     catalog.parent.mkdir(parents=True, exist_ok=True)
-    apply_migrations(catalog)
+    # Pre-existing DB behind shipped migrations so a backup is required.
     connection = sqlite3.connect(catalog)
     try:
         connection.execute(
@@ -76,6 +80,7 @@ def test_run_sqlite_migrations_backs_up_existing_sqlite_before_migrate(
         connection.commit()
     finally:
         connection.close()
+    assert current_schema_version(catalog) == 0
 
     result = run_sqlite_migrations(settings, backup_root=tmp_path / "backups")
 
@@ -122,7 +127,13 @@ def test_run_sqlite_migrations_preserves_original_when_migrate_fails(
     catalog = settings.document_catalog.sql_path
     assert catalog is not None
     catalog.parent.mkdir(parents=True, exist_ok=True)
-    apply_migrations(catalog)
+    connection = sqlite3.connect(catalog)
+    try:
+        connection.execute("CREATE TABLE marker (id INTEGER PRIMARY KEY)")
+        connection.execute("INSERT INTO marker (id) VALUES (7)")
+        connection.commit()
+    finally:
+        connection.close()
     before = catalog.read_bytes()
 
     def boom(*_args, **_kwargs):
@@ -138,3 +149,57 @@ def test_run_sqlite_migrations_preserves_original_when_migrate_fails(
 
     assert catalog.read_bytes() == before
     assert any((tmp_path / "backups").iterdir())
+
+
+def test_run_sqlite_migrations_skips_backup_when_already_current(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _settings_for(tmp_path, monkeypatch)
+    backup_root = tmp_path / "backups"
+    run_sqlite_migrations(settings, backup_root=backup_root)
+
+    result = run_sqlite_migrations(settings, backup_root=backup_root)
+
+    assert result.backups == ()
+    assert not backup_root.exists() or list(backup_root.glob("*.sqlite")) == []
+
+
+def test_prune_sqlite_backups_keeps_newest_n(tmp_path: Path) -> None:
+    dest = tmp_path / "backups"
+    dest.mkdir()
+    for stamp in ("20260101T000000Z", "20260102T000000Z", "20260103T000000Z"):
+        (dest / f"catalog-{stamp}.sqlite").write_bytes(b"x")
+
+    deleted = prune_sqlite_backups(dest, label="catalog", keep=2)
+
+    remaining = sorted(path.name for path in dest.glob("catalog-*.sqlite"))
+    assert remaining == [
+        "catalog-20260102T000000Z.sqlite",
+        "catalog-20260103T000000Z.sqlite",
+    ]
+    assert [path.name for path in deleted] == ["catalog-20260101T000000Z.sqlite"]
+
+
+def test_run_sqlite_migrations_prunes_old_backups_after_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _settings_for(tmp_path, monkeypatch)
+    catalog = settings.document_catalog.sql_path
+    assert catalog is not None
+    catalog.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(catalog)
+    try:
+        connection.execute("CREATE TABLE marker (id INTEGER PRIMARY KEY)")
+        connection.commit()
+    finally:
+        connection.close()
+    backup_root = tmp_path / "backups"
+    backup_root.mkdir()
+    for stamp in ("20250101T000000Z", "20250102T000000Z"):
+        (backup_root / f"catalog-{stamp}.sqlite").write_bytes(b"old")
+
+    run_sqlite_migrations(settings, backup_root=backup_root, keep=2)
+
+    remaining = sorted(path.name for path in backup_root.glob("catalog-*.sqlite"))
+    assert len(remaining) == 2
+    assert "catalog-20250101T000000Z.sqlite" not in remaining

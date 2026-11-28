@@ -60,16 +60,16 @@ wait_http "http://127.0.0.1:${WEB_PORT}/api/healthz"
 wait_http "http://127.0.0.1:${MCP_PORT}/healthz"
 
 echo "==> Seed local user + catalog marker"
+# Seed only uses APIs available in TAG_A (may be previous :stable).
+# Compose migrate already ran; do not import composition.sqlite_migrate here.
 docker compose -p "$PROJECT" exec -T api \
   python - <<'PY'
 from pathlib import Path
 import sqlite3
 from composition import load_runtime_settings
 from composition.auth import create_local_user
-from composition.sqlite_migrate import run_sqlite_migrations
 
 settings = load_runtime_settings()
-run_sqlite_migrations(settings)
 create_local_user("smoke-user", "smoke-password-ok")
 catalog = settings.document_catalog.sql_path
 assert catalog is not None

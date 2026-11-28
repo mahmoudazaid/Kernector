@@ -20,20 +20,32 @@ def test_cli_prints_ok_and_returns_zero(tmp_path: Path) -> None:
     code = main(
         [],
         load_settings=lambda: object(),
-        migrate=lambda _settings, backup_root=None: result,
+        migrate=lambda _settings, backup_root=None, keep=5: result,
     )
 
     assert code == 0
 
 
 def test_cli_returns_two_on_migrate_failure() -> None:
-    def boom(_settings: object, backup_root: Path | None = None):
+    def boom(_settings: object, backup_root: Path | None = None, keep: int = 5):
         raise MigrateSqliteError("nope")
 
     code = main(
         [],
         load_settings=lambda: object(),
         migrate=boom,
+    )
+
+    assert code == 2
+
+
+def test_cli_rejects_negative_keep() -> None:
+    code = main(
+        ["--keep", "-1"],
+        load_settings=lambda: object(),
+        migrate=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("migrate should not run")
+        ),
     )
 
     assert code == 2
