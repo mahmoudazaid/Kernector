@@ -53,6 +53,9 @@ Compose stack. That writes to the host path in `.env` (often
 the host is invisible to Compose until you create them with
 `docker compose exec api …` as above.
 
+Full how-to (more users, create projects, assign project grants):
+[Users, projects, and grants (Docker Compose)](docker-users-and-projects.md).
+
 ## Initial configuration
 
 Compose forces durable paths under the `kernector-data` volume (`/data` in
