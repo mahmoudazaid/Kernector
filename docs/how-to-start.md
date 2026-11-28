@@ -12,6 +12,9 @@ Otherwise run each process in its **own terminal** from the **repository root**
 (unless noted). Copy `.env.example` → `.env` and `web/.env.example` →
 `web/.env.local` first if you have not already.
 
+Workspace AI credential vault master key (when using the SQLite vault): see
+[workspace-credential-vault.md](workspace-credential-vault.md).
+
 Required for the Next.js shell against local FastAPI:
 
 ```bash
