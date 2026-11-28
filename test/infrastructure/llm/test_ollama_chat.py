@@ -123,7 +123,7 @@ def test_complete_raises_provider_error_on_connection_failure() -> None:
 
     assert "secret-token" not in str(raised.value)
     assert "connection refused" not in str(raised.value)
-    assert raised.value.__cause__ is upstream
+    assert raised.value.__cause__ is None
 
 
 @pytest.mark.parametrize(
@@ -155,7 +155,8 @@ def test_complete_classifies_request_failures(
         chat.complete("system", (Message(role="user", content="hi"),), {})
 
     assert "sk-secret" not in str(raised.value)
-    assert raised.value.__cause__ is upstream
+    assert "sk-secret" not in repr(raised.value)
+    assert raised.value.__cause__ is None
 
 
 def test_complete_raises_provider_error_on_parse_failure() -> None:
@@ -169,4 +170,4 @@ def test_complete_raises_provider_error_on_parse_failure() -> None:
     ) as raised:
         chat.complete("system", (Message(role="user", content="hi"),), {})
 
-    assert isinstance(raised.value.__cause__, IndexError)
+    assert raised.value.__cause__ is None

@@ -18,13 +18,21 @@ class ConfigurationBoundaryError(RuntimeError):
     """
 
 
+class UnknownProviderError(DomainValidationError):
+    """The provider id is not in the capability registry."""
+
+
+class UnsupportedProviderPurposeError(DomainValidationError):
+    """The provider is known but does not advertise the requested purpose."""
+
+
 class ProviderError(RuntimeError):
     """An LLM, embedding, or query-rewrite provider call failed at runtime.
 
-    Exception text is diagnostic only. Vendor detail belongs on ``__cause__``
-    alone — never in the exception text. Presentation must always map
-    ``ProviderError`` to a fixed user-safe message; it must not render
-    ``str(error)``.
+    Exception text is diagnostic only and must never include vendor bodies,
+    headers, or secret fragments. Do not retain an unsafe vendor exception as
+    ``__cause__``. Presentation must always map ``ProviderError`` to a fixed
+    user-safe message; it must not render ``str(error)``.
     """
 
 

@@ -8,9 +8,13 @@ from typing import Protocol
 import numpy as np
 from langchain_openai import OpenAIEmbeddings
 
-from domain.errors import ProviderError
 from domain.knowledge import Vector
 from infrastructure.config import OpenRouterSettings
+from infrastructure.llm.provider_failures import classify_provider_failure
+
+_CONNECTION_FAILURE_MESSAGE = (
+    "The OpenRouter embedding provider could not be reached."
+)
 
 
 class EmbeddingConfigError(RuntimeError):
@@ -52,17 +56,17 @@ class OpenRouterEmbeddings:
         try:
             return self._client.embed_documents(list(texts))
         except Exception as exc:
-            raise ProviderError(
-                "The OpenRouter embedding provider could not be reached."
-            ) from exc
+            raise classify_provider_failure(
+                exc, fallback_message=_CONNECTION_FAILURE_MESSAGE
+            ) from None
 
     def embed_query(self, text: str) -> Vector:
         try:
             return self._client.embed_query(text)
         except Exception as exc:
-            raise ProviderError(
-                "The OpenRouter embedding provider could not be reached."
-            ) from exc
+            raise classify_provider_failure(
+                exc, fallback_message=_CONNECTION_FAILURE_MESSAGE
+            ) from None
 
 
 def _require_embedding_config(config: OpenRouterSettings) -> None:

@@ -105,7 +105,7 @@ def test_embed_query_raises_provider_error_without_vendor_text() -> None:
         embeddings.embed_query("hello")
 
     assert "api-key-leaked-in-body" not in str(raised.value)
-    assert raised.value.__cause__ is upstream
+    assert raised.value.__cause__ is None
 
 
 def test_embed_documents_raises_provider_error_without_vendor_text() -> None:
@@ -118,4 +118,4 @@ def test_embed_documents_raises_provider_error_without_vendor_text() -> None:
         embeddings.embed_documents(["a"])
 
     assert "rate limit detail" not in str(raised.value)
-    assert raised.value.__cause__ is upstream
+    assert raised.value.__cause__ is None

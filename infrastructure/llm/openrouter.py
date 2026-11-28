@@ -61,7 +61,7 @@ class OpenRouterChat:
         except Exception as exc:
             raise classify_provider_failure(
                 exc, fallback_message=_CONNECTION_FAILURE_MESSAGE
-            ) from exc
+            ) from None
 
         try:
             content = getattr(ai_message, "content", None)
@@ -77,8 +77,8 @@ class OpenRouterChat:
                 usage=usage,
                 settings=dict(settings),
             )
-        except Exception as exc:
-            raise ProviderError(_PARSE_FAILURE_MESSAGE) from exc
+        except Exception:
+            raise ProviderError(_PARSE_FAILURE_MESSAGE) from None
 
 
 def _default_chat_model(
