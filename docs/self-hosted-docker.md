@@ -18,6 +18,7 @@ cp .env.example .env
 #   ADMIN_API_TOKEN=...
 #   AUTH_CSRF_KEY=...   # long random string
 # Optional LLM keys as documented in .env.example
+# Optional vault master key: docs/workspace-credential-vault.md
 
 docker compose up -d --pull always
 ```

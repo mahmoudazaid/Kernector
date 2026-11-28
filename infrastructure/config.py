@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import os
 import re
 from dataclasses import dataclass, field, replace
@@ -57,6 +59,26 @@ class GeminiSettings:
     model: str | None
     embedding_model: str
     timeout: float
+
+
+@dataclass(frozen=True, slots=True)
+class CredentialVaultSettings:
+    """Deployment master key for workspace AI credential encryption (#461).
+
+    Optional on Settings so unrelated commands can load configuration. Vault
+    adapters fail closed when constructing ``SecretCrypto`` without a valid
+    key. Master-key migration / re-encryption is outside #461.
+    """
+
+    master_key: bytes | None
+    key_version: int | None
+
+    def __repr__(self) -> str:
+        key = "REDACTED" if self.master_key is not None else None
+        return (
+            f"CredentialVaultSettings(master_key={key!r}, "
+            f"key_version={self.key_version!r})"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -527,6 +549,7 @@ class Settings:
     openai: OpenAISettings
     anthropic: AnthropicSettings
     gemini: GeminiSettings
+    credential_vault: CredentialVaultSettings
     chunking: ChunkingSettings
     chroma: ChromaSettings
     knowledge: KnowledgeSettings
@@ -614,6 +637,7 @@ def load_settings() -> Settings:
             ),
             timeout=float(os.getenv("GEMINI_TIMEOUT", "120")),
         ),
+        credential_vault=_load_credential_vault_settings(),
         chunking=_load_chunking_settings(),
         chroma=_load_chroma_settings(),
         knowledge=_load_knowledge_settings(),
@@ -638,6 +662,41 @@ def load_settings() -> Settings:
 
 def _csv(value: str) -> tuple[str, ...]:
     return tuple(item.strip() for item in value.split(",") if item.strip())
+
+
+def _load_credential_vault_settings() -> CredentialVaultSettings:
+    """Load optional vault master key (base64 → exactly 32 bytes) and version."""
+    raw_key = (os.getenv("WORKSPACE_CREDENTIAL_MASTER_KEY") or "").strip()
+    raw_version = (os.getenv("WORKSPACE_CREDENTIAL_MASTER_KEY_VERSION") or "").strip()
+    if not raw_key and not raw_version:
+        return CredentialVaultSettings(master_key=None, key_version=None)
+    if not raw_key or not raw_version:
+        raise ValueError(
+            "WORKSPACE_CREDENTIAL_MASTER_KEY and "
+            "WORKSPACE_CREDENTIAL_MASTER_KEY_VERSION must be set together"
+        )
+    try:
+        key_version = int(raw_version)
+    except ValueError as error:
+        raise ValueError(
+            "WORKSPACE_CREDENTIAL_MASTER_KEY_VERSION must be an integer, "
+            f"got {raw_version!r}"
+        ) from error
+    if key_version < 1:
+        raise ValueError(
+            "WORKSPACE_CREDENTIAL_MASTER_KEY_VERSION must be a positive integer"
+        )
+    try:
+        master_key = base64.b64decode(raw_key, validate=True)
+    except binascii.Error as error:
+        raise ValueError(
+            "WORKSPACE_CREDENTIAL_MASTER_KEY must be valid base64"
+        ) from error
+    if len(master_key) != 32:
+        raise ValueError(
+            "WORKSPACE_CREDENTIAL_MASTER_KEY must decode to exactly 32 bytes"
+        )
+    return CredentialVaultSettings(master_key=master_key, key_version=key_version)
 
 
 def _env_int(name: str, default: str) -> int:

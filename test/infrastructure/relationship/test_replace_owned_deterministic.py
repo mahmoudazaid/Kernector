@@ -83,7 +83,7 @@ def test_migration_preserves_provider_watermarks_as_kind(
         connection.close()
 
     apply_migrations(db)
-    assert current_schema_version(db) == 13
+    assert current_schema_version(db) == 14
     store = SqlRelationshipStore(db, "ws-a")
     assert (
         store.get_record_watermark(
