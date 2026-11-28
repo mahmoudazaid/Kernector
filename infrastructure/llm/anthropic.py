@@ -12,10 +12,12 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from domain.errors import ProviderError
 from domain.models import AskResult, Message, Usage
 from infrastructure.config import AnthropicSettings
+from infrastructure.llm.message_content import normalize_message_content
 from infrastructure.llm.provider_failures import classify_provider_failure
 
 _CONNECTION_FAILURE_MESSAGE = "The Anthropic chat provider could not be reached."
 _PARSE_FAILURE_MESSAGE = "The Anthropic chat response could not be parsed."
+_FIXED_SAMPLING_PREFIXES = ("claude-sonnet-5-5", "claude-fable-5", "claude-mythos-5-2")
 
 
 class ChatConfigError(RuntimeError):
@@ -61,7 +63,7 @@ class AnthropicChat:
             ) from None
 
         try:
-            content = _normalize_content(getattr(ai_message, "content", None))
+            content = normalize_message_content(getattr(ai_message, "content", None))
             if not content.strip():
                 raise TypeError("chat content must be a non-empty str")
             usage = _to_usage(getattr(ai_message, "usage_metadata", None))
@@ -83,8 +85,20 @@ def _default_chat_model(
         model=config.model,
         api_key=config.api_key,
         timeout=config.timeout,
-        **settings,
+        **_sampling_kwargs_for_model(config.model, settings),
     )
+
+
+def _sampling_kwargs_for_model(
+    model: str, settings: Mapping[str, object]
+) -> dict[str, object]:
+    """Drop sampling knobs Claude 5.5 / Fable reject at non-default values."""
+    kwargs = dict(settings)
+    if not model.startswith(_FIXED_SAMPLING_PREFIXES):
+        return kwargs
+    for key in ("temperature", "top_p", "top_k"):
+        kwargs.pop(key, None)
+    return kwargs
 
 
 def _require_chat_config(config: AnthropicSettings) -> None:
@@ -107,22 +121,6 @@ def _ask_prompt() -> ChatPromptTemplate:
 
 def _to_provider_messages(messages: Sequence[Message]) -> list[dict]:
     return [{"role": m.role, "content": m.content} for m in messages]
-
-
-def _normalize_content(content: object) -> str:
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts: list[str] = []
-        for block in content:
-            if isinstance(block, str):
-                parts.append(block)
-            elif isinstance(block, Mapping) and isinstance(block.get("text"), str):
-                parts.append(block["text"])
-            elif hasattr(block, "text") and isinstance(block.text, str):
-                parts.append(block.text)
-        return "".join(parts)
-    raise TypeError(f"chat content must be a non-empty str, got {content!r}")
 
 
 def _to_usage(meta: object) -> Usage | None:

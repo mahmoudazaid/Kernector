@@ -609,7 +609,7 @@ def load_settings() -> Settings:
             api_key=os.getenv("GEMINI_API_KEY"),
             model=os.getenv("GEMINI_MODEL"),
             embedding_model=os.getenv(
-                "GEMINI_EMBEDDING_MODEL", "models/text-embedding-004"
+                "GEMINI_EMBEDDING_MODEL", "models/gemini-embedding-2"
             ),
             timeout=float(os.getenv("GEMINI_TIMEOUT", "120")),
         ),

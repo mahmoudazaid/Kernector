@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from domain.errors import QueryRewriterError
+from domain.errors import ProviderError, QueryRewriterError
+from infrastructure.llm.message_content import normalize_message_content
 from infrastructure.llm.provider_failures import classify_provider_failure
 from infrastructure.llm.query_rewrite import REWRITE_SYSTEM
 
@@ -35,16 +36,19 @@ class ChatQueryRewriter:
         ]
         try:
             result = self._model.invoke(messages)
+        except ProviderError:
+            raise
         except Exception as error:
             raise classify_provider_failure(
                 error, fallback_message=_INVOKE_FAILURE_MESSAGE
             ) from None
 
-        content = getattr(result, "content", result)
-        if not isinstance(content, str):
+        try:
+            content = normalize_message_content(getattr(result, "content", result))
+        except TypeError as error:
             raise QueryRewriterError(
-                f"Query rewrite returned non-string content: {type(content).__name__}"
-            )
+                f"Query rewrite returned non-string content: {type(getattr(result, 'content', result)).__name__}"
+            ) from error
         normalized = content.strip()
         if not normalized:
             raise QueryRewriterError("Query rewrite returned a blank retrieval query")

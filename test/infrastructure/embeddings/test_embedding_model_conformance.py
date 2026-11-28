@@ -75,7 +75,7 @@ def _gemini_settings(**overrides: object) -> GeminiSettings:
     values: dict[str, object] = {
         "api_key": "gem-key",
         "model": "gemini-2.0-flash",
-        "embedding_model": "models/text-embedding-004",
+        "embedding_model": "models/gemini-embedding-2",
         "timeout": 30.0,
     }
     values.update(overrides)

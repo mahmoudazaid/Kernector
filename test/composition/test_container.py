@@ -306,12 +306,31 @@ def test_build_runtime_settings_exposes_constraints_and_enabled_packs(
 
     catalog = build_runtime_settings(load_settings()).execute()
 
+    assert catalog.providers == ("openrouter", "ollama")
     assert catalog.constraints.max_input_length == 1234
     assert catalog.constraints.max_upload_bytes == 2048
     assert catalog.constraints.supported_upload_suffixes == tuple(
         sorted(SUPPORTED_UPLOAD_SUFFIXES)
     )
     assert catalog.enabled_packs == ("software-delivery",)
+
+
+def test_ollama_rewrite_stays_on_openrouter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ollama chat keeps rewrite on OpenRouter (per-request Ollama URL not required)."""
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_BASE_URL", "https://openrouter.test/api/v1")
+    monkeypatch.setenv("OPENROUTER_MODEL", "test/chat-model")
+    monkeypatch.setenv("OPENROUTER_EMBEDDING_MODEL", "test/embedding-model")
+    monkeypatch.setenv("OPENROUTER_REWRITE_MODEL", "test/rewrite-model")
+    monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+    monkeypatch.setenv("OLLAMA_MODEL", "llama3.2")
+
+    use_case = build_rewrite_and_retrieve_knowledge(load_settings())
+
+    assert isinstance(use_case._query_rewriter, OpenRouterQueryRewriter)
 
 
 def test_build_ask_knowledge_routes_generation_through_ask_service(
@@ -567,6 +586,25 @@ def test_agent_model_factory_uses_runtime_provider_override(
     assert observing._model_name == "llama3"
     assert observing._inner.model_name == "llama3"
     assert "http://h:1234/v1" in str(observing._inner.openai_api_base)
+
+
+def test_agent_model_factory_builds_native_openai_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from composition.container import _software_delivery_agent_model_factory
+
+    _sd_env(monkeypatch)
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-4o-mini")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    observing = _software_delivery_agent_model_factory(load_settings())()
+
+    assert observing._model_name == "gpt-4o-mini"
+    assert observing._inner.model_name == "gpt-4o-mini"
+    base = str(getattr(observing._inner, "openai_api_base", "") or "")
+    assert "openrouter.ai" not in base
 
 
 def test_agent_model_factory_rejects_unknown_provider(

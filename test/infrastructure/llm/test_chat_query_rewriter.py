@@ -42,6 +42,23 @@ def test_non_string_content_raises_query_rewriter_error() -> None:
         rewriter.rewrite("q")
 
 
+def test_list_content_blocks_are_flattened() -> None:
+    rewriter = ChatQueryRewriter(
+        _FakeModel([{"type": "text", "text": "retrieval "}, {"type": "text", "text": "query"}])
+    )
+    assert rewriter.rewrite("what is it?") == "retrieval query"
+
+
+def test_typed_provider_error_is_re_raised_unchanged() -> None:
+    from domain.errors import ProviderTimeoutError
+
+    upstream = ProviderTimeoutError("The query rewrite provider timed out.")
+    rewriter = ChatQueryRewriter(_FakeModel(error=upstream))
+    with pytest.raises(ProviderTimeoutError) as raised:
+        rewriter.rewrite("q")
+    assert raised.value is upstream
+
+
 def test_invocation_failure_is_typed_and_sanitized() -> None:
     upstream = AuthenticationError(
         "bad key sk-secret",

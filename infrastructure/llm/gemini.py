@@ -12,6 +12,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from domain.errors import ProviderError
 from domain.models import AskResult, Message, Usage
 from infrastructure.config import GeminiSettings
+from infrastructure.llm.message_content import normalize_message_content
 from infrastructure.llm.provider_failures import classify_provider_failure
 
 _CONNECTION_FAILURE_MESSAGE = "The Gemini chat provider could not be reached."
@@ -61,11 +62,9 @@ class GeminiChat:
             ) from None
 
         try:
-            content = getattr(ai_message, "content", None)
-            if not isinstance(content, str) or not content.strip():
-                raise TypeError(
-                    f"chat content must be a non-empty str, got {content!r}"
-                )
+            content = normalize_message_content(getattr(ai_message, "content", None))
+            if not content.strip():
+                raise TypeError("chat content must be a non-empty str")
             usage = _to_usage(getattr(ai_message, "usage_metadata", None))
             return AskResult(
                 content=content,

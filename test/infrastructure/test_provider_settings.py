@@ -67,7 +67,7 @@ def test_gemini_settings_defaults(env: pytest.MonkeyPatch) -> None:
     gemini = load_settings().gemini
     assert gemini.api_key is None
     assert gemini.model is None
-    assert gemini.embedding_model == "models/text-embedding-004"
+    assert gemini.embedding_model == "models/gemini-embedding-2"
     assert gemini.timeout == 120.0
 
 

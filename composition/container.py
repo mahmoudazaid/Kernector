@@ -260,10 +260,23 @@ def available_providers() -> tuple[str, ...]:
     return tuple(_CHAT_MODELS)
 
 
+# Settings UI / preferences / ChatRuntimeRequest still accept only these (#462).
+_RUNTIME_CATALOG_PROVIDERS = frozenset({"openrouter", "ollama"})
+
+
 def build_runtime_settings(settings: Settings) -> GetRuntimeSettings:
-    """Wire :class:`GetRuntimeSettings` from env Settings + available providers."""
+    """Wire :class:`GetRuntimeSettings` from env Settings + available providers.
+
+    Catalog providers stay limited to what the Settings UI and preference
+    schema accept until native-provider UI work lands.
+    """
+    catalog_providers = tuple(
+        provider
+        for provider in available_providers()
+        if provider in _RUNTIME_CATALOG_PROVIDERS
+    )
     return GetRuntimeSettings(
-        providers=available_providers(),
+        providers=catalog_providers,
         defaults=RuntimeSettingsDefaults(
             provider=settings.provider,
             openrouter_models=tuple(settings.openrouter.models),
@@ -558,7 +571,6 @@ def build_rewrite_and_retrieve_knowledge(
         OpenAIChatConfigError,
         AnthropicChatConfigError,
         GeminiChatConfigError,
-        OllamaConfigError,
         ChatConfigError,
     ) as exc:
         raise ConfigurationError(str(exc)) from exc
@@ -571,8 +583,12 @@ def build_rewrite_and_retrieve_knowledge(
 
 
 def _build_query_rewriter(settings: Settings, provider: str):
-    """Build a QueryRewriter for ``provider`` (OpenRouter path preserved)."""
-    if provider == "openrouter":
+    """Build a QueryRewriter for ``provider`` (OpenRouter path preserved).
+
+    Ollama chat keeps rewrite on OpenRouter (same as ``build_embedding_model``
+    and pre-#462), so per-request Ollama base URL is not required for rewrite.
+    """
+    if provider in {"openrouter", "ollama"}:
         return OpenRouterQueryRewriter(settings.openrouter)
     if provider == "openai":
         from langchain_openai import ChatOpenAI
@@ -619,34 +635,7 @@ def _build_query_rewriter(settings: Settings, provider: str):
                 timeout=config.timeout,
             )
         )
-    if provider == "ollama":
-        # Ollama rewrite uses OpenRouter-style HTTP chat via ChatQueryRewriter
-        # wrapping a minimal invoke adapter around OllamaChat.complete.
-        chat = OllamaChat(settings.ollama)
-        return ChatQueryRewriter(_OllamaRewriteInvoke(chat))
     raise UnknownProviderError("Unknown provider.")
-
-
-class _OllamaRewriteInvoke:
-    """Adapt ``OllamaChat.complete`` to the ChatQueryRewriter invoke seam."""
-
-    def __init__(self, chat: OllamaChat) -> None:
-        self._chat = chat
-
-    def invoke(self, messages: object, **kwargs: object) -> object:
-        from domain.models import Message
-
-        system = ""
-        history: list[Message] = []
-        for message in messages:  # type: ignore[union-attr]
-            role = getattr(message, "type", None) or getattr(message, "role", None)
-            content = getattr(message, "content", "")
-            if role in {"system", "SystemMessage"} or type(message).__name__ == "SystemMessage":
-                system = str(content)
-            else:
-                history.append(Message(role="user", content=str(content)))
-        result = self._chat.complete(system, history, {})
-        return type("Msg", (), {"content": result.content})()
 
 
 def _workspace_store_path(settings: Settings):
@@ -1468,7 +1457,7 @@ def _software_delivery_agent_model_factory(
 
     Validates the full provider credential contract via the same ``_build_*``
     helpers as live chat (typed ``ConfigurationError`` subclasses), then builds
-    a LangChain ``ChatOpenAI`` from the same resolved runtime config.
+    the matching LangChain client (OpenAI / Anthropic / Gemini / Ollama).
 
     Args:
         settings (Settings): Process settings for provider defaults.
@@ -1482,9 +1471,6 @@ def _software_delivery_agent_model_factory(
     """
 
     def factory(**_kwargs: object):
-        from langchain_openai import ChatOpenAI
-        from pydantic import SecretStr
-
         from domain.errors import ProviderError
 
         effective = provider or settings.provider
@@ -1495,53 +1481,120 @@ def _software_delivery_agent_model_factory(
         # Validate via chat builders (discard adapter; keep typed config errors).
         _ = builder(settings, model, base_url)
 
-        if effective == "ollama":
-            config = _ollama_runtime_config(
-                settings, model=model, base_url=base_url
+        try:
+            inner, model_name = _agent_langchain_model(
+                settings,
+                provider=effective,
+                model=model,
+                base_url=base_url,
             )
-            if not config.base_url or not config.model:
-                # builder() already validated; keep a local guard for the checker.
-                raise MissingProviderCredentialsError(
-                    "Missing OLLAMA_BASE_URL or OLLAMA_MODEL."
-                )
-            base = config.base_url.rstrip("/")
-            try:
-                inner = ChatOpenAI(
-                    model=config.model,
-                    api_key=SecretStr("ollama"),
-                    base_url=f"{base}/v1",
-                    timeout=config.timeout,
-                )
-            except Exception as exc:
-                raise ProviderError(
-                    "The tool-calling agent provider could not be reached."
-                ) from exc
-            model_name = config.model
-        else:
-            config = _openrouter_runtime_config(settings, model=model)
-            if not config.api_key or not config.model:
-                # builder() already validated; keep a local guard for the checker.
-                raise MissingProviderCredentialsError(
-                    "Missing OPENROUTER_API_KEY or OPENROUTER_MODEL."
-                )
-            try:
-                inner = ChatOpenAI(
-                    model=config.model,
-                    api_key=SecretStr(config.api_key),
-                    base_url=config.base_url,
-                    timeout=config.timeout,
-                )
-            except Exception as exc:
-                raise ProviderError(
-                    "The tool-calling agent provider could not be reached."
-                ) from exc
-            model_name = config.model
+        except (
+            MissingProviderCredentialsError,
+            ProviderError,
+            UnknownProviderError,
+        ):
+            raise
+        except Exception as exc:
+            raise ProviderError(
+                "The tool-calling agent provider could not be reached."
+            ) from exc
 
         return _ObservingChatOpenAI(
             inner, recorder=recorder, model_name=model_name
         )
 
     return factory
+
+
+def _agent_langchain_model(
+    settings: Settings,
+    *,
+    provider: str,
+    model: str | None,
+    base_url: str | None,
+) -> tuple[object, str]:
+    """Build the LangChain chat client the agent loop binds tools onto."""
+    from langchain_openai import ChatOpenAI
+    from pydantic import SecretStr
+
+    if provider == "ollama":
+        config = _ollama_runtime_config(settings, model=model, base_url=base_url)
+        if not config.base_url or not config.model:
+            raise MissingProviderCredentialsError(
+                "Missing OLLAMA_BASE_URL or OLLAMA_MODEL."
+            )
+        base = config.base_url.rstrip("/")
+        return (
+            ChatOpenAI(
+                model=config.model,
+                api_key=SecretStr("ollama"),
+                base_url=f"{base}/v1",
+                timeout=config.timeout,
+            ),
+            config.model,
+        )
+    if provider == "openrouter":
+        config = _openrouter_runtime_config(settings, model=model)
+        if not config.api_key or not config.model:
+            raise MissingProviderCredentialsError(
+                "Missing OPENROUTER_API_KEY or OPENROUTER_MODEL."
+            )
+        return (
+            ChatOpenAI(
+                model=config.model,
+                api_key=SecretStr(config.api_key),
+                base_url=config.base_url,
+                timeout=config.timeout,
+            ),
+            config.model,
+        )
+    if provider == "openai":
+        config = _openai_runtime_config(settings, model=model)
+        if not config.api_key or not config.model:
+            raise MissingProviderCredentialsError(
+                "Missing OPENAI_API_KEY or OPENAI_MODEL."
+            )
+        return (
+            ChatOpenAI(
+                model=config.model,
+                api_key=SecretStr(config.api_key),
+                timeout=config.timeout,
+            ),
+            config.model,
+        )
+    if provider == "anthropic":
+        from langchain_anthropic import ChatAnthropic
+
+        config = _anthropic_runtime_config(settings, model=model)
+        if not config.api_key or not config.model:
+            raise MissingProviderCredentialsError(
+                "Missing ANTHROPIC_API_KEY or ANTHROPIC_MODEL."
+            )
+        return (
+            ChatAnthropic(
+                model=config.model,
+                api_key=config.api_key,
+                timeout=config.timeout,
+            ),
+            config.model,
+        )
+    if provider == "gemini":
+        from langchain_google_genai import ChatGoogleGenerativeAI
+
+        config = _gemini_runtime_config(settings, model=model)
+        if not config.api_key or not config.model:
+            raise MissingProviderCredentialsError(
+                "Missing GEMINI_API_KEY or GEMINI_MODEL."
+            )
+        return (
+            ChatGoogleGenerativeAI(
+                model=config.model,
+                google_api_key=config.api_key,
+                timeout=config.timeout,
+            ),
+            config.model,
+        )
+    raise UnknownProviderError("Unknown provider.")
 
 
 class _ObservingChatOpenAI:

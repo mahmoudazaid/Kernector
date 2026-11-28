@@ -137,7 +137,7 @@ def _gemini_settings(**overrides: object) -> GeminiSettings:
     values: dict[str, object] = {
         "api_key": "gem-key",
         "model": "gemini-2.0-flash",
-        "embedding_model": "models/text-embedding-004",
+        "embedding_model": "models/gemini-embedding-2",
         "timeout": 30.0,
     }
     values.update(overrides)
@@ -288,3 +288,27 @@ def test_parse_failure_has_no_unsafe_cause(
     with pytest.raises(ProviderError) as raised:
         chat.complete("system", (Message(role="user", content="hi"),), {})
     assert raised.value.__cause__ is None
+
+
+def test_gemini_flattens_content_block_lists() -> None:
+    fake = _FakeChat(
+        AIMessage(content=[{"type": "text", "text": "hello from gemini-3"}])
+    )
+    chat, _factory = _build_gemini(fake)
+    result = chat.complete("system", (Message(role="user", content="hi"),), {})
+    assert result.content == "hello from gemini-3"
+
+
+def test_anthropic_drops_sampling_for_claude_sonnet_5_5() -> None:
+    from infrastructure.llm.anthropic import _sampling_kwargs_for_model
+
+    filtered = _sampling_kwargs_for_model(
+        "claude-sonnet-5-5",
+        {"temperature": 0.3, "max_tokens": 1000, "top_p": 1.0},
+    )
+    assert filtered == {"max_tokens": 1000}
+    kept = _sampling_kwargs_for_model(
+        "claude-sonnet-4-5",
+        {"temperature": 0.3, "max_tokens": 1000, "top_p": 1.0},
+    )
+    assert kept == {"temperature": 0.3, "max_tokens": 1000, "top_p": 1.0}
