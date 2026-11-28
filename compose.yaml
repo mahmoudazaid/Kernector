@@ -11,11 +11,11 @@
 
 name: kernector
 
+# Shared runtime image for migrate/api/mcp. Only ``api`` declares ``build`` so
+# Compose Bake does not race three exports onto the same tag (fails with
+# ``image ... already exists`` on local/arm64 builds when GHCR has no arm64).
 x-api-image: &api-image
   image: ghcr.io/mahmoudazaid/kernector-api:${KERNECTOR_IMAGE_TAG:-stable}
-  build:
-    context: .
-    dockerfile: deploy/docker/Dockerfile.api
 
 x-data-env: &data-env
   DOCUMENT_CATALOG_SQL_PATH: /data/catalog/catalog.sqlite
@@ -47,6 +47,9 @@ services:
 
   api:
     <<: *api-image
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.api
     command:
       [
         "uvicorn",

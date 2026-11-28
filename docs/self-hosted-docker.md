@@ -32,8 +32,8 @@ docker compose up -d --pull always
 ### First user (required to sign in)
 
 Compose installs start with an empty auth database and no public sign-up.
-Create the first local account inside the API container, then grant workspace
-access:
+Create the first local account **inside the API container**, then grant
+workspace access:
 
 ```bash
 docker compose exec api python -m presentation.cli.create_user --username alice
@@ -45,6 +45,13 @@ docker compose exec api python -m presentation.cli.grant_workspace_access \
 
 Open `http://localhost:3000` and sign in. MCP clients use
 `http://127.0.0.1:8100/mcp` with a profile bearer from Admin → MCP Access.
+
+**Do not** use host `uv run python -m presentation.cli.create_user` against a
+Compose stack. That writes to the host path in `.env` (often
+`data/auth/auth.sqlite`). Hub login uses the container volume at
+`/data/auth/auth.sqlite` (`kernector-data`). A user that “already exists” on
+the host is invisible to Compose until you create them with
+`docker compose exec api …` as above.
 
 ## Initial configuration
 
@@ -161,10 +168,15 @@ Automatic image rollback is **not** implemented. If a release is unhealthy:
 
 ## Local build (contributors)
 
+GHCR `stable` may not publish every CPU architecture yet. On Apple Silicon,
+`--pull always` can warn `no matching manifest for linux/arm64` and fall back
+to a local build. `migrate` / `api` / `mcp` share one image tag; only `api`
+declares `build` so Bake does not race three exports onto that tag.
+
 ```bash
 docker compose build
 docker compose up -d
 ```
 
 Customers should prefer `--pull always` against GHCR tags rather than local
-builds.
+builds when an image exists for their platform.

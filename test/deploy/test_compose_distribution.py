@@ -49,6 +49,13 @@ def test_images_target_ghcr() -> None:
     assert "ghcr.io/mahmoudazaid/kernector-web:" in text
 
 
+def test_api_image_build_declared_once() -> None:
+    """migrate/mcp reuse the api image; parallel Bake must not race one tag."""
+    text = COMPOSE_PATH.read_text(encoding="utf-8")
+    assert text.count("dockerfile: deploy/docker/Dockerfile.api") == 1
+    assert "Dockerfile.api" in text
+
+
 def test_dockerfiles_exist() -> None:
     assert (REPO_ROOT / "deploy/docker/Dockerfile.api").is_file()
     assert (REPO_ROOT / "deploy/docker/Dockerfile.web").is_file()

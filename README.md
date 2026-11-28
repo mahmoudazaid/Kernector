@@ -99,14 +99,19 @@ retired.
 
 ### Local user auth (#182) and workspace access (#446)
 
-Provision accounts with the CLI only (no HTTP register, no `--password` flag):
+Provision accounts with the CLI only (no HTTP register, no `--password` flag).
+The CLI writes to whatever `AUTH_SQL_PATH` the process sees — host `.venv`
+and Docker Compose do **not** share a database.
+
+**Local `uv` / API on the host** (reads `AUTH_SQL_PATH` from `.env`, default
+`data/auth/auth.sqlite`):
 
 ```bash
 uv run python -m presentation.cli.create_user --username alice
 ```
 
-Grant workspace membership plus **explicit** project access (single-host
-`auth.sqlite`; requires `DOCUMENT_CATALOG_WORKSPACE_ID`):
+Grant workspace membership plus **explicit** project access (requires
+`DOCUMENT_CATALOG_WORKSPACE_ID`):
 
 ```bash
 uv run python -m presentation.cli.grant_workspace_access \
@@ -116,6 +121,17 @@ uv run python -m presentation.cli.grant_workspace_access \
 # On an empty catalog this grants membership only so you can create the
 # first project via authenticated HTTP (create then self-grants access):
 uv run python -m presentation.cli.grant_workspace_access \
+  --username alice --all-existing-projects
+```
+
+**Docker Compose:** create the user inside the API container so it lands in
+`/data/auth/auth.sqlite` on `kernector-data`. Host `uv run … create_user`
+will not unlock Hub login after `docker compose up`. See
+[Self-hosted Docker](docs/self-hosted-docker.md#first-user-required-to-sign-in):
+
+```bash
+docker compose exec api python -m presentation.cli.create_user --username alice
+docker compose exec api python -m presentation.cli.grant_workspace_access \
   --username alice --all-existing-projects
 ```
 
