@@ -12,6 +12,8 @@ from application.contracts import (
     ConnectorSyncStatus,
 )
 from application.errors import GoogleDriveNotConnectedError
+from domain.auth.principal import Principal
+from domain.project.access import ProjectAccessCaller
 from presentation.http.schemas import GOOGLE_DRIVE_SELECTION_LIST_MAX
 from composition import (
     ConnectorSyncError,
@@ -24,6 +26,7 @@ from composition import (
 from presentation.http import deps as http_deps
 from presentation.http.app import create_app
 from presentation.http.deps import (
+    get_trusted_caller,
     get_google_drive_disconnect,
     get_google_drive_oauth_callback,
     get_google_drive_oauth_start,
@@ -95,7 +98,10 @@ def test_status_dep_passes_the_process_catalog(
         return _status()
 
     monkeypatch.setattr(http_deps, "google_drive_status", fake_status)
-    http_deps.get_google_drive_status(SimpleNamespace())
+    http_deps.get_google_drive_status(SimpleNamespace(), _caller=ProjectAccessCaller(
+        principal=Principal(user_id="usr_test", username="test"),
+        workspace_id="test-workspace",
+    ))
     assert seen == [(None, http_deps.get_document_catalog)]
 
 
@@ -116,7 +122,10 @@ def test_status_dep_does_not_build_catalog_at_resolution(
         return _status()
 
     monkeypatch.setattr(http_deps, "google_drive_status", fake_status)
-    http_deps.get_google_drive_status(SimpleNamespace())
+    http_deps.get_google_drive_status(SimpleNamespace(), _caller=ProjectAccessCaller(
+        principal=Principal(user_id="usr_test", username="test"),
+        workspace_id="test-workspace",
+    ))
     assert calls == []
     assert seen == [(None, boom)]
 
@@ -130,7 +139,10 @@ def test_sync_dep_passes_the_process_catalog(monkeypatch: pytest.MonkeyPatch) ->
         return ConnectorSyncResponse(outcomes=())
 
     monkeypatch.setattr(http_deps, "sync_google_drive_oauth", fake_sync)
-    http_deps.get_google_drive_sync(SimpleNamespace())()
+    http_deps.get_google_drive_sync(SimpleNamespace(), _caller=ProjectAccessCaller(
+        principal=Principal(user_id="usr_test", username="test"),
+        workspace_id="test-workspace",
+    ))()
     assert seen == [http_deps.get_document_catalog]
 
 
@@ -329,6 +341,10 @@ def test_google_drive_sync_conflicts_when_disconnected_without_calling_sync(
     monkeypatch.setattr(http_deps, "get_vector_store", recording_store)
 
     app = create_app()
+    app.dependency_overrides[get_trusted_caller] = lambda: ProjectAccessCaller(
+        principal=Principal(user_id="usr_test", username="test"),
+        workspace_id="test-workspace",
+    )
     app.dependency_overrides[get_google_drive_status] = lambda: _status(
         configured=True, available=True, connected=False
     )

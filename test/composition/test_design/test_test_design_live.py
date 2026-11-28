@@ -793,6 +793,8 @@ def test_build_test_design_facade_does_not_require_vector_store(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from presentation import http
+    from domain.auth.principal import Principal
+    from domain.project.access import ProjectAccessCaller
     from presentation.http import deps as http_deps
 
     settings = _oauth_settings(tmp_path)
@@ -802,7 +804,13 @@ def test_build_test_design_facade_does_not_require_vector_store(
         raise AssertionError("vector store must not be instantiated")
 
     monkeypatch.setattr(http_deps, "get_vector_store", explode)
-    facade = http_deps.get_test_design_facade(settings)
+    facade = http_deps.get_test_design_facade(
+        settings,
+        _caller=ProjectAccessCaller(
+            principal=Principal(user_id="usr_test", username="test"),
+            workspace_id="test-workspace",
+        ),
+    )
 
     assert facade is not None
     assert http is not None

@@ -920,6 +920,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/me/workspace": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Put Workspace Selection
+     * @description Persist a membership-validated workspace selection on the session (#447).
+     */
+    put: operations["put_workspace_selection_api_v1_me_workspace_put"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/ollama/status": {
     parameters: {
       query?: never;
@@ -949,13 +969,13 @@ export interface paths {
     };
     /**
      * List Projects
-     * @description List the bound workspace's projects.
+     * @description List projects the trusted caller may read in the bound workspace.
      */
     get: operations["list_projects_api_v1_projects_get"];
     put?: never;
     /**
      * Create Project
-     * @description Create a project in the bound workspace.
+     * @description Create a project in the trusted workspace and grant the caller access.
      */
     post: operations["create_project_api_v1_projects_post"];
     delete?: never;
@@ -3062,6 +3082,16 @@ export interface components {
       /** Error Type */
       type: string;
     };
+    /** WorkspaceSelectionResponse */
+    WorkspaceSelectionResponse: {
+      /** Workspace Id */
+      workspace_id: string;
+    };
+    /** WorkspaceSelectionUpdate */
+    WorkspaceSelectionUpdate: {
+      /** Workspace Id */
+      workspace_id: string;
+    };
   };
   responses: never;
   parameters: never;
@@ -3841,6 +3871,24 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ToolApprovalDecisionResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Error */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
         };
       };
       /** @description Not found */
@@ -6108,6 +6156,68 @@ export interface operations {
       };
     };
   };
+  put_workspace_selection_api_v1_me_workspace_put: {
+    parameters: {
+      query?: never;
+      header?: {
+        "X-CSRF-Token"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["WorkspaceSelectionUpdate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["WorkspaceSelectionResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Error */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+      /** @description Server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
   ollama_status_api_v1_ollama_status_get: {
     parameters: {
       query?: never;
@@ -6173,6 +6283,24 @@ export interface operations {
           "application/json": components["schemas"]["ProjectResponse"][];
         };
       };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Error */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
       /** @description Server error */
       500: {
         headers: {
@@ -6204,6 +6332,24 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ProjectResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Error */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
         };
       };
       /** @description Conflict */
@@ -6253,6 +6399,24 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ProjectDetailResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Error */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
         };
       };
       /** @description Not found */
@@ -6309,6 +6473,24 @@ export interface operations {
           "application/json": components["schemas"]["RelationshipResponse"][];
         };
       };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Error */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
       /** @description Not found */
       404: {
         headers: {
@@ -6360,6 +6542,24 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ProjectAssociationResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Error */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
         };
       };
       /** @description Not found */
@@ -6423,6 +6623,24 @@ export interface operations {
         };
         content?: never;
       };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Error */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
       /** @description Not found */
       404: {
         headers: {
@@ -6483,6 +6701,24 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ProjectAssociationResponse"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Error */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["Problem"];
         };
       };
       /** @description Not found */

@@ -92,3 +92,14 @@ def test_connector_status_requires_authentication(auth_env) -> None:
     ):
         response = client.get(path)
         assert response.status_code == 401, path
+
+
+def test_documents_deny_when_trusted_workspace_differs_from_process_bound(
+    auth_env,
+) -> None:
+    """Until #448, membership in another workspace cannot unlock this process."""
+    client = _client()
+    _login_with_membership(client, workspace_id="other-workspace")
+    response = client.get("/api/v1/documents")
+    assert response.status_code == 403
+    assert response.json()["code"] == "forbidden"

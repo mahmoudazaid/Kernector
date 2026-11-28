@@ -1,5 +1,7 @@
-import { loadPublicEnv } from "@/lib/env";
 import { TestDesignWorkspace } from "@/components/test-design/TestDesignWorkspace";
+
+/** Same-origin BFF so kernector_session reaches FastAPI (#447). */
+const BFF = "";
 
 type Props = {
   params: Promise<{ draftId: string }>;
@@ -7,11 +9,5 @@ type Props = {
 
 export default async function TestDesignPage({ params }: Props) {
   const { draftId } = await params;
-  const env = loadPublicEnv();
-  return (
-    <TestDesignWorkspace
-      apiBaseUrl={env.NEXT_PUBLIC_API_BASE_URL}
-      draftId={draftId}
-    />
-  );
+  return <TestDesignWorkspace apiBaseUrl={BFF} draftId={draftId} />;
 }

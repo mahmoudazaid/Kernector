@@ -1,18 +1,14 @@
 import { NextResponse } from "next/server";
-import { proxyApi } from "@/lib/server/api-proxy";
+import { proxyAuthApi, redactAuthSecrets } from "@/lib/server/auth-proxy";
 
-export async function GET(): Promise<Response> {
+export async function GET(request: Request): Promise<Response> {
   try {
-    const upstream = await proxyApi("/api/v1/projects");
-    const body = await upstream.text();
-    return new NextResponse(body, {
-      status: upstream.status,
-      headers: {
-        "Content-Type":
-          upstream.headers.get("Content-Type") ?? "application/json",
-      },
-    });
-  } catch {
+    return await proxyAuthApi(request, "/api/v1/projects", { method: "GET" });
+  } catch (error) {
+    console.error(
+      "projects BFF proxy failed:",
+      redactAuthSecrets(String(error)),
+    );
     return NextResponse.json(
       {
         type: "https://kernector.dev/problems/backend_unavailable",

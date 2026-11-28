@@ -13,6 +13,8 @@ from application.contracts import IngestRequest, IngestResponse
 from composition import container as composition_container
 from infrastructure.config import load_settings
 from infrastructure.connectors.jira import data_center
+from domain.auth.principal import Principal
+from domain.project.access import ProjectAccessCaller
 from presentation.http import deps
 from presentation.http.app import create_app
 from test.composition.jira.jira_fakes import dc_settings
@@ -104,6 +106,10 @@ def world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     )
     app = create_app()
     app.dependency_overrides[deps.get_settings] = lambda: settings
+    app.dependency_overrides[deps.get_trusted_caller] = lambda: ProjectAccessCaller(
+        principal=Principal(user_id="usr_test", username="test"),
+        workspace_id="test-workspace",
+    )
     client = TestClient(app, follow_redirects=False)
     return settings, server, catalog, ingest, client
 
@@ -186,6 +192,10 @@ def test_unconfigured_data_center_requires_setup(
     monkeypatch.setattr(deps, "get_document_catalog", InMemoryDocumentCatalog)
     app = create_app()
     app.dependency_overrides[deps.get_settings] = lambda: settings
+    app.dependency_overrides[deps.get_trusted_caller] = lambda: ProjectAccessCaller(
+        principal=Principal(user_id="usr_test", username="test"),
+        workspace_id="test-workspace",
+    )
     client = TestClient(app)
 
     status = client.get(BASE).json()

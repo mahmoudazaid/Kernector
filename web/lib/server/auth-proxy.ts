@@ -117,6 +117,10 @@ export async function proxyAuthApi(
   if (contentType) {
     outHeaders.set("Content-Type", contentType);
   }
+  const location = upstream.headers.get("location");
+  if (location) {
+    outHeaders.set("Location", location);
+  }
   outHeaders.set("Cache-Control", NO_STORE);
 
   const getSetCookie = (

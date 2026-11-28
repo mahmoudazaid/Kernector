@@ -103,14 +103,18 @@ def get_settings() -> Settings:
     return load_runtime_settings()
 
 
-def get_trusted_caller(request: Request) -> ProjectAccessCaller:
+def get_trusted_caller(
+    request: Request,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> ProjectAccessCaller:
     """Resolve membership-backed caller before product dependencies (#447).
 
     Raises:
         HTTPException: 401 when unauthenticated; 403 when authenticated but
-            without a usable trusted workspace selection/membership.
+            without a usable trusted workspace selection/membership, or when
+            the trusted workspace differs from this process-bound catalog
+            workspace (until #448).
     """
-    settings = get_settings()
     store = build_auth_store(settings)
     resolved = resolve_session(
         store, settings.auth, request.cookies.get(settings.auth.cookie_name)
@@ -121,7 +125,7 @@ def get_trusted_caller(request: Request) -> ProjectAccessCaller:
         )
     try:
         bootstrap = bootstrap_workspace_id_from_settings(settings)
-        return resolve_caller_for_principal(
+        caller = resolve_caller_for_principal(
             resolved.principal,
             store,
             session_selected_workspace_id=resolved.selected_workspace_id,
@@ -137,6 +141,17 @@ def get_trusted_caller(request: Request) -> ProjectAccessCaller:
             status_code=403,
             detail="Workspace selection is required.",
         ) from error
+
+    # Until #448, catalog/vector/connectors are process-bound to env workspace.
+    bound = settings.document_catalog.workspace_id
+    if bound is not None and str(bound).strip():
+        bound_id = str(bound).strip()
+        if caller.workspace_id != bound_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Workspace is not available on this service.",
+            )
+    return caller
 
 
 TrustedCallerDep = Annotated[ProjectAccessCaller, Depends(get_trusted_caller)]
@@ -200,8 +215,8 @@ def get_clarification_context_store() -> ClarificationContextStore:
 
 
 def get_ask_factory(
-    _caller: TrustedCallerDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    _caller: TrustedCallerDep,
     vector_store: Annotated[VectorStore, Depends(get_vector_store)],
     prompt_repository: Annotated[PromptRepository, Depends(get_prompt_repository)],
     short_term_memory: Annotated[
@@ -280,8 +295,8 @@ class DocumentOperations:
 
 
 def get_document_operations(
-    _caller: TrustedCallerDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    _caller: TrustedCallerDep,
 ) -> DocumentOperations:
     """Bind list/create/replace/delete to settings and a lazy vector store.
 
@@ -357,8 +372,8 @@ def get_document_operations(
 
 
 def get_google_drive_status(
-    _caller: TrustedCallerDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    _caller: TrustedCallerDep,
 ) -> GoogleDriveStatus:
     """Report Drive configuration presence and extra availability."""
     return google_drive_status(
@@ -367,16 +382,16 @@ def get_google_drive_status(
 
 
 def get_github_status(
-    _caller: TrustedCallerDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    _caller: TrustedCallerDep,
 ) -> GitHubStatus:
     """Report GitHub configuration presence and extra availability."""
     return github_status(settings, catalog_factory=get_document_catalog)
 
 
 def get_google_drive_sync(
-    _caller: TrustedCallerDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    _caller: TrustedCallerDep,
 ) -> Callable[[], ConnectorSyncResponse]:
     """Return a Drive sync callable that builds the vector store lazily.
 
@@ -396,8 +411,8 @@ def get_google_drive_sync(
 
 
 def get_github_sync(
-    _caller: TrustedCallerDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    _caller: TrustedCallerDep,
 ) -> Callable[[], ConnectorSyncResponse]:
     """Return a GitHub sync callable that builds the vector store lazily."""
 
@@ -412,8 +427,8 @@ def get_github_sync(
 
 
 def get_google_drive_oauth_start(
-    _caller: TrustedCallerDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    _caller: TrustedCallerDep,
 ) -> Callable[[], str]:
     """Return a callable that issues CSRF state and builds Google's auth URL."""
 
@@ -428,8 +443,8 @@ def get_google_drive_oauth_start(
 
 
 def get_github_oauth_start(
-    _caller: TrustedCallerDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    _caller: TrustedCallerDep,
 ) -> Callable[[], str]:
     """Return a callable that issues CSRF state and builds GitHub's auth URL."""
 
@@ -444,8 +459,8 @@ def get_github_oauth_start(
 
 
 def get_google_drive_oauth_callback(
-    _caller: TrustedCallerDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    _caller: TrustedCallerDep,
 ) -> Callable[[str | None, str | None, str | None], str]:
     """Return a callable that completes the OAuth callback."""
 
@@ -465,8 +480,8 @@ def get_google_drive_oauth_callback(
 
 
 def get_github_oauth_callback(
-    _caller: TrustedCallerDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    _caller: TrustedCallerDep,
 ) -> Callable[[str | None, str | None, str | None], str]:
     """Return a callable that completes the GitHub OAuth callback."""
 
@@ -486,8 +501,8 @@ def get_github_oauth_callback(
 
 
 def get_google_drive_disconnect(
-    _caller: TrustedCallerDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    _caller: TrustedCallerDep,
 ) -> Callable[[], None]:
     """Return a callable that revokes and deletes the stored user grant."""
 
@@ -498,8 +513,8 @@ def get_google_drive_disconnect(
 
 
 def get_github_disconnect(
-    _caller: TrustedCallerDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    _caller: TrustedCallerDep,
 ) -> Callable[[], None]:
     """Return a callable that revokes and deletes the stored GitHub grant."""
 
@@ -510,8 +525,8 @@ def get_github_disconnect(
 
 
 def get_google_drive_browse(
-    _caller: TrustedCallerDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    _caller: TrustedCallerDep,
 ) -> Callable[..., GoogleDriveBrowsePage]:
     """Return a Drive picker listing callable bound to this process."""
 
@@ -534,8 +549,8 @@ def get_google_drive_browse(
 
 
 def get_google_drive_create_folder(
-    _caller: TrustedCallerDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    _caller: TrustedCallerDep,
 ) -> Callable[..., GoogleDriveBrowseItem]:
     """Return a Drive folder-create callable bound to this process."""
 
@@ -554,8 +569,8 @@ def get_google_drive_create_folder(
 
 
 def get_google_drive_selection_read(
-    _caller: TrustedCallerDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    _caller: TrustedCallerDep,
 ) -> Callable[[], GoogleDriveSelection]:
     """Return a callable that loads the saved Drive selection."""
 
@@ -566,8 +581,8 @@ def get_google_drive_selection_read(
 
 
 def get_google_drive_selection_write(
-    _caller: TrustedCallerDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    _caller: TrustedCallerDep,
 ) -> Callable[..., GoogleDriveSelection]:
     """Return a callable that validates and replaces the saved Drive selection."""
 
@@ -584,8 +599,8 @@ def get_google_drive_selection_write(
 
 
 def get_github_repo_list(
-    _caller: TrustedCallerDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    _caller: TrustedCallerDep,
 ) -> Callable[..., GitHubRepoPage]:
     """Return a GitHub repository listing callable for the Hub picker."""
 
@@ -596,8 +611,8 @@ def get_github_repo_list(
 
 
 def get_github_project_list(
-    _caller: TrustedCallerDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    _caller: TrustedCallerDep,
 ) -> Callable[..., GitHubProjectPage]:
     """Return a GitHub ProjectV2 listing callable for the Hub picker."""
 
@@ -614,8 +629,8 @@ def get_github_project_list(
 
 
 def get_github_selection_read(
-    _caller: TrustedCallerDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    _caller: TrustedCallerDep,
 ) -> Callable[[], GitHubSelection]:
     """Return a callable that loads the saved GitHub selection."""
 
@@ -626,8 +641,8 @@ def get_github_selection_read(
 
 
 def get_github_selection_write(
-    _caller: TrustedCallerDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    _caller: TrustedCallerDep,
 ) -> Callable[..., GitHubSelection]:
     """Return a callable that validates and replaces the saved GitHub selection."""
 
@@ -680,16 +695,16 @@ def get_github_selection_write(
 
 
 def get_jira_status(
-    _caller: TrustedCallerDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    _caller: TrustedCallerDep,
 ) -> JiraStatus:
     """Report the Jira connection without calling Atlassian."""
     return jira_status(settings, catalog_factory=get_document_catalog)
 
 
 def get_jira_sync(
-    _caller: TrustedCallerDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    _caller: TrustedCallerDep,
 ) -> Callable[[], ConnectorSyncResponse]:
     """Return a Jira sync callable that builds the vector store lazily."""
 
@@ -704,8 +719,8 @@ def get_jira_sync(
 
 
 def get_jira_oauth_start(
-    _caller: TrustedCallerDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    _caller: TrustedCallerDep,
 ) -> Callable[[], str]:
     """Return a callable that issues CSRF state and builds Atlassian's auth URL."""
 
@@ -720,8 +735,8 @@ def get_jira_oauth_start(
 
 
 def get_jira_oauth_callback(
-    _caller: TrustedCallerDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    _caller: TrustedCallerDep,
 ) -> Callable[[str | None, str | None, str | None], str]:
     """Return a callable that completes the Atlassian OAuth callback."""
 
@@ -739,8 +754,8 @@ def get_jira_oauth_callback(
 
 
 def get_jira_disconnect(
-    _caller: TrustedCallerDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    _caller: TrustedCallerDep,
 ) -> Callable[[], None]:
     """Return a callable that deletes the grant and purges Jira documents."""
 
@@ -755,8 +770,8 @@ def get_jira_disconnect(
 
 
 def get_jira_site_list(
-    _caller: TrustedCallerDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    _caller: TrustedCallerDep,
 ) -> Callable[[], tuple[JiraSiteItem, ...]]:
     """Return a callable listing Jira sites the grant can read."""
 
@@ -767,8 +782,8 @@ def get_jira_site_list(
 
 
 def get_jira_site_write(
-    _caller: TrustedCallerDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    _caller: TrustedCallerDep,
 ) -> Callable[..., JiraSelection]:
     """Return a callable that selects a Jira site (switching purges documents)."""
 
@@ -784,8 +799,8 @@ def get_jira_site_write(
 
 
 def get_jira_project_list(
-    _caller: TrustedCallerDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    _caller: TrustedCallerDep,
 ) -> Callable[..., JiraProjectPage]:
     """Return a Jira project listing callable for the Hub picker."""
 
@@ -796,8 +811,8 @@ def get_jira_project_list(
 
 
 def get_jira_selection_read(
-    _caller: TrustedCallerDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    _caller: TrustedCallerDep,
 ) -> Callable[[], JiraSelection]:
     """Return a callable that loads the saved Jira selection."""
 
@@ -808,8 +823,8 @@ def get_jira_selection_read(
 
 
 def get_jira_selection_write(
-    _caller: TrustedCallerDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    _caller: TrustedCallerDep,
 ) -> Callable[..., JiraSelection]:
     """Return a callable that validates and replaces the Jira project selection."""
 
@@ -913,8 +928,8 @@ JiraSelectionWriteDep = Annotated[
 
 
 def get_test_design_facade(
-    _caller: TrustedCallerDep,
     settings: Annotated[Settings, Depends(get_settings)],
+    _caller: TrustedCallerDep,
 ) -> TestDesignFacade:
     """Build the test-design facade for this request (pack gated at call time)."""
     from composition.container import build_test_design_facade

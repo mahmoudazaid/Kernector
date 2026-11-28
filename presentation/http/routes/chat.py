@@ -17,6 +17,7 @@ from presentation.http.deps import (
     SettingsDep,
     ShortTermMemoryRuntimeDep,
     TestDesignFacadeDep,
+    TrustedCallerDep,
 )
 from presentation.http.errors import problem_responses
 from presentation.http.schemas import (
@@ -93,15 +94,17 @@ def chat_ask(
 
 @router.post(
     "/chat/threads/{conversation_id}/approvals/{approval_id}",
-    responses=problem_responses(404, 409, 422, 500, 502),
+    responses=problem_responses(401, 403, 404, 409, 422, 500, 502),
 )
 def decide_tool_approval(
     conversation_id: str,
     approval_id: str,
     body: ToolApprovalDecisionRequest,
+    _caller: TrustedCallerDep,
     short_term_memory: ShortTermMemoryRuntimeDep,
 ) -> ToolApprovalDecisionResponse:
     """Approve or reject a pending high-impact tool call on this thread."""
+    del _caller
     result = short_term_memory.decide_tool_approval().execute(
         DecideToolApprovalRequest(
             conversation_id=conversation_id,
