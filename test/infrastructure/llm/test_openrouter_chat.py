@@ -143,7 +143,7 @@ def test_complete_raises_provider_error_without_vendor_text() -> None:
         chat.complete("system", (Message(role="user", content="hi"),), {})
 
     assert "upstream down" not in str(raised.value)
-    assert raised.value.__cause__ is upstream
+    assert raised.value.__cause__ is None
     assert type(raised.value) is ProviderError
 
 
@@ -222,7 +222,8 @@ def test_complete_classifies_provider_failures(
         chat.complete("system", (Message(role="user", content="hi"),), {})
 
     assert "sk-secret" not in str(raised.value)
-    assert raised.value.__cause__ is upstream
+    assert "sk-secret" not in repr(raised.value)
+    assert raised.value.__cause__ is None
 
 
 @pytest.mark.parametrize(
@@ -241,7 +242,7 @@ def test_complete_raises_parse_error_for_missing_or_non_string_content(
         chat.complete("system", (Message(role="user", content="hi"),), {})
 
     assert "chunk" not in str(raised.value)
-    assert raised.value.__cause__ is not None
+    assert raised.value.__cause__ is None
 
 
 def test_complete_raises_parse_error_for_malformed_usage_metadata() -> None:
@@ -260,7 +261,7 @@ def test_complete_raises_parse_error_for_malformed_usage_metadata() -> None:
         chat.complete("system", (Message(role="user", content="hi"),), {})
 
     assert "usage-secret-token" not in str(raised.value)
-    assert raised.value.__cause__ is not None
+    assert raised.value.__cause__ is None
 
 
 def test_complete_raises_parse_error_when_ask_result_construction_fails(
@@ -283,4 +284,4 @@ def test_complete_raises_parse_error_when_ask_result_construction_fails(
         chat.complete("system", (Message(role="user", content="hi"),), {})
 
     assert "secret-body" not in str(raised.value)
-    assert isinstance(raised.value.__cause__, TypeError)
+    assert raised.value.__cause__ is None

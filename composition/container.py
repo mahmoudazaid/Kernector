@@ -14,6 +14,8 @@ from application.errors import (
     MissingProviderCredentialsError,
     OllamaNotConfiguredError,
 )
+from domain.errors import UnknownProviderError
+from domain.providers import require_provider_purpose
 from application.ingest_knowledge import IngestKnowledge
 from application.invoke_tool import InvokeTool
 from application.retrieve_knowledge import RetrieveKnowledge
@@ -32,7 +34,10 @@ from composition.chat.clarification_context import ClarificationContextStore
 from composition.chat.correlated_ask import CorrelatedAsk
 from composition.logging_config import configure_logging
 from composition.chat.recording_chat import RecordingChatModel
-from composition.software_delivery.agent import build_agent_orchestrate
+from composition.software_delivery.agent import (
+    PrepareXrayExport,
+    build_agent_orchestrate,
+)
 from composition.software_delivery.chat import (
     OpaqueInvoke,
     PackSoftwareDeliveryChat,
@@ -65,7 +70,10 @@ from infrastructure.catalog.sql_catalog import SqlDocumentCatalog
 from infrastructure.catalog.workspace import WORKSPACE_ID_CONTRACT, parse_workspace_id
 from infrastructure.project.sql_store import ProjectStoreError
 from infrastructure.config import (
+    AnthropicSettings,
+    GeminiSettings,
     OllamaSettings,
+    OpenAISettings,
     OpenRouterSettings,
     Settings,
     load_settings,
@@ -78,11 +86,24 @@ from infrastructure.documents.uploaded_files import (
     SUPPORTED_SUFFIXES,
     unsupported_document_type_detail,
 )
+from infrastructure.embeddings.gemini import (
+    EmbeddingConfigError as GeminiEmbeddingConfigError,
+)
+from infrastructure.embeddings.gemini import GeminiEmbeddings
+from infrastructure.embeddings.openai import (
+    EmbeddingConfigError as OpenAIEmbeddingConfigError,
+)
+from infrastructure.embeddings.openai import OpenAIEmbeddings
 from infrastructure.embeddings.openrouter import (
     EmbeddingConfigError,
     OpenRouterEmbeddings,
 )
 from infrastructure.knowledge.corpus import CorpusLoadError, load_knowledge_corpus
+from infrastructure.llm.anthropic import AnthropicChat
+from infrastructure.llm.anthropic import ChatConfigError as AnthropicChatConfigError
+from infrastructure.llm.chat_query_rewriter import ChatQueryRewriter
+from infrastructure.llm.gemini import ChatConfigError as GeminiChatConfigError
+from infrastructure.llm.gemini import GeminiChat
 from infrastructure.llm.ollama import (
     OllamaBaseUrlMissingError,
     OllamaChat,
@@ -90,6 +111,8 @@ from infrastructure.llm.ollama import (
     OllamaModelMissingError,
 )
 from infrastructure.llm.ollama import probe_ollama as _probe_ollama
+from infrastructure.llm.openai import ChatConfigError as OpenAIChatConfigError
+from infrastructure.llm.openai import OpenAIChat
 from infrastructure.llm.openrouter import ChatConfigError, OpenRouterChat
 from infrastructure.llm.query_rewrite import (
     OpenRouterQueryRewriter,
@@ -139,6 +162,39 @@ def _build_ollama(
         raise MissingProviderCredentialsError(str(exc)) from exc
 
 
+def _build_openai(
+    settings: Settings, model: str | None, base_url: str | None
+) -> ChatModel:
+    del base_url
+    config = _openai_runtime_config(settings, model=model)
+    try:
+        return OpenAIChat(config)
+    except OpenAIChatConfigError as exc:
+        raise MissingProviderCredentialsError(str(exc)) from exc
+
+
+def _build_anthropic(
+    settings: Settings, model: str | None, base_url: str | None
+) -> ChatModel:
+    del base_url
+    config = _anthropic_runtime_config(settings, model=model)
+    try:
+        return AnthropicChat(config)
+    except AnthropicChatConfigError as exc:
+        raise MissingProviderCredentialsError(str(exc)) from exc
+
+
+def _build_gemini(
+    settings: Settings, model: str | None, base_url: str | None
+) -> ChatModel:
+    del base_url
+    config = _gemini_runtime_config(settings, model=model)
+    try:
+        return GeminiChat(config)
+    except GeminiChatConfigError as exc:
+        raise MissingProviderCredentialsError(str(exc)) from exc
+
+
 def _openrouter_runtime_config(
     settings: Settings, *, model: str | None
 ) -> OpenRouterSettings:
@@ -159,14 +215,48 @@ def _ollama_runtime_config(
     return config
 
 
+def _openai_runtime_config(
+    settings: Settings, *, model: str | None
+) -> OpenAISettings:
+    config = settings.openai
+    if model:
+        config = replace(config, model=model)
+    return config
+
+
+def _anthropic_runtime_config(
+    settings: Settings, *, model: str | None
+) -> AnthropicSettings:
+    config = settings.anthropic
+    if model:
+        config = replace(config, model=model)
+    return config
+
+
+def _gemini_runtime_config(
+    settings: Settings, *, model: str | None
+) -> GeminiSettings:
+    config = settings.gemini
+    if model:
+        config = replace(config, model=model)
+    return config
+
+
 _CHAT_MODELS: Mapping[str, Callable[[Settings, str | None, str | None], ChatModel]] = {
     "openrouter": _build_openrouter,
+    "openai": _build_openai,
+    "anthropic": _build_anthropic,
+    "gemini": _build_gemini,
     "ollama": _build_ollama,
 }
 
 
 def available_providers() -> tuple[str, ...]:
-    """The provider keys the composition root knows how to build."""
+    """Chat-buildable provider keys (not purpose-aware discovery).
+
+    Purpose-aware callers should use ``known_providers()`` + ``supports``.
+    Env credentials remain transitional bootstrap (#462→#466).
+    """
     return tuple(_CHAT_MODELS)
 
 
@@ -245,19 +335,45 @@ def build_chat_model(
 ) -> ChatModel:
     """Build a chat model, applying runtime overrides over the loaded settings.
 
-    `base_url` applies to Ollama only; OpenRouter ignores it.
+    `base_url` applies to Ollama only; other providers ignore it.
+    Env credentials are transitional bootstrap until workspace SQL profiles
+    (#463/#464) and migration docs (#466).
     """
     provider = provider or settings.provider
+    require_provider_purpose(provider, "chat")
     factory = _CHAT_MODELS.get(provider)
     if factory is None:
-        raise ValueError(
-            f"Unknown provider {provider!r}. Expected one of {sorted(_CHAT_MODELS)}."
-        )
+        # Registry knows the id but composition has no chat builder yet.
+        raise UnknownProviderError("Unknown provider.")
     return factory(settings, model, base_url)
 
 
-def build_embedding_model(settings: Settings) -> EmbeddingModel:
-    return OpenRouterEmbeddings(settings.openrouter)
+def build_embedding_model(
+    settings: Settings,
+    provider: str | None = None,
+) -> EmbeddingModel:
+    """Build an embedding model.
+
+    Selection rule (#462): ``provider`` defaults to ``\"openrouter\"``, never to
+    ``settings.provider``, so Ollama chat keeps OpenRouter embeddings. Pass
+    ``provider=`` explicitly to activate OpenAI/Gemini embeddings.
+    """
+    effective = provider if provider is not None else "openrouter"
+    require_provider_purpose(effective, "embedding")
+    try:
+        if effective == "openrouter":
+            return OpenRouterEmbeddings(settings.openrouter)
+        if effective == "openai":
+            return OpenAIEmbeddings(settings.openai)
+        if effective == "gemini":
+            return GeminiEmbeddings(settings.gemini)
+    except (
+        EmbeddingConfigError,
+        OpenAIEmbeddingConfigError,
+        GeminiEmbeddingConfigError,
+    ) as exc:
+        raise ConfigurationError(str(exc)) from exc
+    raise UnknownProviderError("Unknown provider.")
 
 
 def build_chroma_vector_store(settings: Settings) -> ChromaVectorStore:
@@ -431,10 +547,20 @@ def build_rewrite_and_retrieve_knowledge(
 
     Raises:
         ConfigurationError: Rewrite or embedding credentials are missing.
+        UnknownProviderError / UnsupportedProviderPurposeError: Provider unfit.
     """
+    provider = settings.provider
+    require_provider_purpose(provider, "rewrite")
     try:
-        rewriter = OpenRouterQueryRewriter(settings.openrouter)
-    except QueryRewriteConfigError as exc:
+        rewriter = _build_query_rewriter(settings, provider)
+    except (
+        QueryRewriteConfigError,
+        OpenAIChatConfigError,
+        AnthropicChatConfigError,
+        GeminiChatConfigError,
+        OllamaConfigError,
+        ChatConfigError,
+    ) as exc:
         raise ConfigurationError(str(exc)) from exc
     retrieve = build_retrieve_knowledge(settings, vector_store=vector_store)
     return RewriteAndRetrieveKnowledge(
@@ -442,6 +568,85 @@ def build_rewrite_and_retrieve_knowledge(
         retrieve,
         max_input_length=settings.max_input_length,
     )
+
+
+def _build_query_rewriter(settings: Settings, provider: str):
+    """Build a QueryRewriter for ``provider`` (OpenRouter path preserved)."""
+    if provider == "openrouter":
+        return OpenRouterQueryRewriter(settings.openrouter)
+    if provider == "openai":
+        from langchain_openai import ChatOpenAI
+
+        config = settings.openai
+        if not config.api_key or not config.model:
+            raise OpenAIChatConfigError(
+                "Missing OPENAI_API_KEY or OPENAI_MODEL for query rewrite."
+            )
+        return ChatQueryRewriter(
+            ChatOpenAI(
+                model=config.model,
+                api_key=config.api_key,
+                timeout=config.timeout,
+            )
+        )
+    if provider == "anthropic":
+        from langchain_anthropic import ChatAnthropic
+
+        config = settings.anthropic
+        if not config.api_key or not config.model:
+            raise AnthropicChatConfigError(
+                "Missing ANTHROPIC_API_KEY or ANTHROPIC_MODEL for query rewrite."
+            )
+        return ChatQueryRewriter(
+            ChatAnthropic(
+                model=config.model,
+                api_key=config.api_key,
+                timeout=config.timeout,
+            )
+        )
+    if provider == "gemini":
+        from langchain_google_genai import ChatGoogleGenerativeAI
+
+        config = settings.gemini
+        if not config.api_key or not config.model:
+            raise GeminiChatConfigError(
+                "Missing GEMINI_API_KEY or GEMINI_MODEL for query rewrite."
+            )
+        return ChatQueryRewriter(
+            ChatGoogleGenerativeAI(
+                model=config.model,
+                google_api_key=config.api_key,
+                timeout=config.timeout,
+            )
+        )
+    if provider == "ollama":
+        # Ollama rewrite uses OpenRouter-style HTTP chat via ChatQueryRewriter
+        # wrapping a minimal invoke adapter around OllamaChat.complete.
+        chat = OllamaChat(settings.ollama)
+        return ChatQueryRewriter(_OllamaRewriteInvoke(chat))
+    raise UnknownProviderError("Unknown provider.")
+
+
+class _OllamaRewriteInvoke:
+    """Adapt ``OllamaChat.complete`` to the ChatQueryRewriter invoke seam."""
+
+    def __init__(self, chat: OllamaChat) -> None:
+        self._chat = chat
+
+    def invoke(self, messages: object, **kwargs: object) -> object:
+        from domain.models import Message
+
+        system = ""
+        history: list[Message] = []
+        for message in messages:  # type: ignore[union-attr]
+            role = getattr(message, "type", None) or getattr(message, "role", None)
+            content = getattr(message, "content", "")
+            if role in {"system", "SystemMessage"} or type(message).__name__ == "SystemMessage":
+                system = str(content)
+            else:
+                history.append(Message(role="user", content=str(content)))
+        result = self._chat.complete(system, history, {})
+        return type("Msg", (), {"content": result.content})()
 
 
 def _workspace_store_path(settings: Settings):
@@ -1175,7 +1380,7 @@ def build_tool_augmented_ask(
             citation_channel,
             max_input_length=settings.max_input_length,
         )
-        prepare_xray = None
+        prepare_xray: PrepareXrayExport | None = None
         if _xray_tool_collaborators(settings)[0] is not None:
             from composition.xray_export.prepare import prepare_xray_export_call
 
@@ -1183,12 +1388,14 @@ def build_tool_augmented_ask(
             project_key = settings.xray.project_key or ""
             xray_export_enabled = True
 
-            def prepare_xray(conversation_id: str):
+            def _prepare_xray(conversation_id: str):
                 return prepare_xray_export_call(
                     conversation_id=conversation_id,
                     drafts=xray_drafts,
                     project_key=project_key,
                 )
+
+            prepare_xray = _prepare_xray
 
         # Drive export stays retrieval-free: omit retrieve_tool here.
         # Pass retrieve_tool into build_agent_orchestrate only for evidence
@@ -1281,12 +1488,10 @@ def _software_delivery_agent_model_factory(
         from domain.errors import ProviderError
 
         effective = provider or settings.provider
+        require_provider_purpose(effective, "chat")
         builder = _CHAT_MODELS.get(effective)
         if builder is None:
-            raise ValueError(
-                f"Unknown provider {effective!r}. "
-                f"Expected one of {sorted(_CHAT_MODELS)}."
-            )
+            raise UnknownProviderError("Unknown provider.")
         # Validate via chat builders (discard adapter; keep typed config errors).
         _ = builder(settings, model, base_url)
 

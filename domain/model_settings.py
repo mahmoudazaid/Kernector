@@ -10,7 +10,13 @@ class Setting:
     max_value: int
     step: float | int
     help: str
-    providers: tuple[str, ...] = ("openrouter", "ollama")
+    providers: tuple[str, ...] = (
+        "openrouter",
+        "openai",
+        "anthropic",
+        "gemini",
+        "ollama",
+    )
 
 
 SETTINGS = (

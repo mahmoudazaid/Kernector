@@ -155,6 +155,12 @@ def test_every_advertised_provider_is_buildable(
     """`available_providers()` must not advertise a factory that does not work."""
     _openrouter_chat_env(monkeypatch)
     monkeypatch.setenv("OLLAMA_MODEL", "llama3.2")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-4o-mini")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant")
+    monkeypatch.setenv("ANTHROPIC_MODEL", "claude-sonnet-4-5")
+    monkeypatch.setenv("GEMINI_API_KEY", "gem-key")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-2.0-flash")
     settings = load_settings()
     for provider in available_providers():
         assert build_chat_model(
@@ -163,7 +169,9 @@ def test_every_advertised_provider_is_buildable(
 
 
 def test_unknown_provider_is_rejected() -> None:
-    with pytest.raises(ValueError, match="Unknown provider"):
+    from domain.errors import UnknownProviderError
+
+    with pytest.raises(UnknownProviderError, match="Unknown provider"):
         build_chat_model(load_settings(), provider="gpt-by-carrier-pigeon")
 
 
@@ -565,12 +573,13 @@ def test_agent_model_factory_rejects_unknown_provider(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from composition.container import _software_delivery_agent_model_factory
+    from domain.errors import UnknownProviderError
 
     _sd_env(monkeypatch)
     factory = _software_delivery_agent_model_factory(
-        load_settings(), provider="gemini"
+        load_settings(), provider="carrier-pigeon"
     )
-    with pytest.raises(ValueError, match="Unknown provider"):
+    with pytest.raises(UnknownProviderError, match="Unknown provider"):
         factory()
 
 

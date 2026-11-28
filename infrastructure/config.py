@@ -31,6 +31,35 @@ class OllamaSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class OpenAISettings:
+    """Temporary env bootstrap for OpenAI until workspace SQL profiles (#463–#466)."""
+
+    api_key: str | None
+    model: str | None
+    embedding_model: str
+    timeout: float
+
+
+@dataclass(frozen=True, slots=True)
+class AnthropicSettings:
+    """Temporary env bootstrap for Anthropic until workspace SQL profiles (#463–#466)."""
+
+    api_key: str | None
+    model: str | None
+    timeout: float
+
+
+@dataclass(frozen=True, slots=True)
+class GeminiSettings:
+    """Temporary env bootstrap for Gemini until workspace SQL profiles (#463–#466)."""
+
+    api_key: str | None
+    model: str | None
+    embedding_model: str
+    timeout: float
+
+
+@dataclass(frozen=True, slots=True)
 class ChunkingSettings:
     chunk_size: int
     chunk_overlap: int
@@ -494,6 +523,9 @@ class Settings:
     max_upload_bytes: int
     openrouter: OpenRouterSettings
     ollama: OllamaSettings
+    openai: OpenAISettings
+    anthropic: AnthropicSettings
+    gemini: GeminiSettings
     chunking: ChunkingSettings
     chroma: ChromaSettings
     knowledge: KnowledgeSettings
@@ -559,6 +591,27 @@ def load_settings() -> Settings:
             base_url=os.getenv("OLLAMA_BASE_URL"),
             model=os.getenv("OLLAMA_MODEL"),
             timeout=float(os.getenv("OLLAMA_TIMEOUT", "120")),
+        ),
+        openai=OpenAISettings(
+            api_key=os.getenv("OPENAI_API_KEY"),
+            model=os.getenv("OPENAI_MODEL"),
+            embedding_model=os.getenv(
+                "OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"
+            ),
+            timeout=float(os.getenv("OPENAI_TIMEOUT", "120")),
+        ),
+        anthropic=AnthropicSettings(
+            api_key=os.getenv("ANTHROPIC_API_KEY"),
+            model=os.getenv("ANTHROPIC_MODEL"),
+            timeout=float(os.getenv("ANTHROPIC_TIMEOUT", "120")),
+        ),
+        gemini=GeminiSettings(
+            api_key=os.getenv("GEMINI_API_KEY"),
+            model=os.getenv("GEMINI_MODEL"),
+            embedding_model=os.getenv(
+                "GEMINI_EMBEDDING_MODEL", "models/text-embedding-004"
+            ),
+            timeout=float(os.getenv("GEMINI_TIMEOUT", "120")),
         ),
         chunking=_load_chunking_settings(),
         chroma=_load_chroma_settings(),

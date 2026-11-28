@@ -87,7 +87,7 @@ class OpenRouterQueryRewriter:
         except Exception as error:
             raise classify_provider_failure(
                 error, fallback_message=_INVOKE_FAILURE_MESSAGE
-            ) from error
+            ) from None
 
         content = getattr(result, "content", result)
         if not isinstance(content, str):
