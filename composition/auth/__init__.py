@@ -190,7 +190,8 @@ def grant_workspace_access(
         username (str): Existing local username.
         project_ids (tuple[str, ...] | None): Explicit project ids to grant.
         all_existing_projects (bool): When True, grant the current workspace
-            project snapshot. Never implied by an omitted project list.
+            project snapshot (membership only when empty). Never implied by
+            an omitted project list.
         settings (Settings | None): Optional settings override.
         auth_store (SqlAuthStore | None): Test seam for the auth SQLite store.
         project_store (object | None): Test seam for the workspace project store.
@@ -231,28 +232,33 @@ def grant_workspace_access(
         else:
             selected = tuple(project_ids or ())
 
-        if not selected:
+        if not all_existing_projects and not selected:
             raise ConfigurationError(
-                "provide --project-id values or --all-existing-projects "
-                "with at least one project in the workspace"
+                "provide --project-id values or --all-existing-projects"
             )
 
-        with projects.read() as tx:  # type: ignore[attr-defined]
-            missing = [
-                project_id
-                for project_id in selected
-                if tx.projects.get(project_id) is None
-            ]
-        if missing:
-            raise ConfigurationError("unknown project")
+        if selected:
+            with projects.read() as tx:  # type: ignore[attr-defined]
+                missing = [
+                    project_id
+                    for project_id in selected
+                    if tx.projects.get(project_id) is None
+                ]
+            if missing:
+                raise ConfigurationError("unknown project")
 
         user = store.get_user_by_username(username.strip())
         if user is None:
             raise ConfigurationError("user not found")
 
-        store.grant_membership_with_projects(
-            user.user_id, bound_workspace, selected
-        )
+        if selected:
+            store.grant_membership_with_projects(
+                user.user_id, bound_workspace, selected
+            )
+        else:
+            # Empty workspace snapshot: membership only so the operator can
+            # create the first project via authenticated HTTP (#447).
+            store.grant_membership(user.user_id, bound_workspace)
     except ConfigurationError:
         raise
     except UserNotFoundError as error:

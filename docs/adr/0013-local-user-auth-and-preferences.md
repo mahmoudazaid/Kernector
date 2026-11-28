@@ -87,10 +87,11 @@ Permission catalog and RBAC evaluation remain
 11. **Operator bootstrap CLI (#446)** —
     `presentation.cli.grant_workspace_access` grants membership plus
     explicit `--project-id` values (repeatable) or
-    `--all-existing-projects` (snapshot). Omitting both is an error, never
-    “all projects”. Validation runs before any write so failures leave no
-    partial membership/grant state. Single-host SQLite only; multi-instance
-    persistence remains #271 / #270.
+    `--all-existing-projects` (snapshot; membership only when the catalog is
+    empty so the first project can be created via authenticated HTTP).
+    Omitting both is an error, never “all projects”. Validation runs before
+    any write so failures leave no partial membership/grant state.
+    Single-host SQLite only; multi-instance persistence remains #271 / #270.
 
 ## Consequences
 

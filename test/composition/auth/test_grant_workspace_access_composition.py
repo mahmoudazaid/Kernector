@@ -104,15 +104,27 @@ def test_grant_workspace_access_rejects_empty_project_selection(
             project_store=projects,
             workspace_id="ws_acme",
         )
-    with pytest.raises(ConfigurationError, match="project"):
-        grant_workspace_access(
-            username="alice",
-            project_ids=None,
-            all_existing_projects=True,
-            auth_store=auth,
-            project_store=projects,
-            workspace_id="ws_acme",
-        )
+
+
+def test_grant_workspace_access_empty_catalog_grants_membership_only(
+    tmp_path: Path,
+) -> None:
+    """--all-existing-projects on an empty catalog enables first project create."""
+    auth = SqlAuthStore(tmp_path / "auth.sqlite")
+    projects = SqlProjectStore(tmp_path / "catalog.sqlite", "ws_acme")
+    user = auth.create_user("alice", "secret-password")
+    result = grant_workspace_access(
+        username="alice",
+        project_ids=None,
+        all_existing_projects=True,
+        auth_store=auth,
+        project_store=projects,
+        workspace_id="ws_acme",
+    )
+    assert result.project_ids == ()
+    membership = auth.get_membership(user.user_id, "ws_acme")
+    assert membership is not None
+    assert membership.status == "active"
 
 
 def test_grant_workspace_access_maps_auth_store_build_oserror(

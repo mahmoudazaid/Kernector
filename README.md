@@ -94,13 +94,15 @@ uv run python -m presentation.cli.create_user --username alice
 ```
 
 Grant workspace membership plus **explicit** project access (single-host
-`auth.sqlite`; requires `DOCUMENT_CATALOG_WORKSPACE_ID` and existing projects):
+`auth.sqlite`; requires `DOCUMENT_CATALOG_WORKSPACE_ID`):
 
 ```bash
 uv run python -m presentation.cli.grant_workspace_access \
   --username alice --project-id prj_one --project-id prj_two
 
-# Or snapshot every project present in the bound workspace right now:
+# Snapshot every project present in the bound workspace right now.
+# On an empty catalog this grants membership only so you can create the
+# first project via authenticated HTTP (create then self-grants access):
 uv run python -m presentation.cli.grant_workspace_access \
   --username alice --all-existing-projects
 ```
@@ -549,12 +551,23 @@ Grant files live under `data/jira-oauth-*.json` (gitignored, mode `0600`).
 
 ### Smoke test
 
+Product connector routes require a signed-in session (#447). Log in once,
+reuse the cookie jar, and keep `Origin` in `AUTH_TRUSTED_ORIGINS`. The caller
+needs an active membership in `DOCUMENT_CATALOG_WORKSPACE_ID` (see
+[Local user auth](#local-user-auth-182-and-workspace-access-446)). Prefer the
+Hub origin so the same BFF path the UI uses forwards the cookie:
+
 ```bash
-curl -s http://127.0.0.1:8000/api/v1/connectors/jira
-curl -s http://127.0.0.1:8000/api/v1/connectors/jira/sites
-curl -s -X PUT http://127.0.0.1:8000/api/v1/connectors/jira/selection \
+COOKIE_JAR=$(mktemp)
+curl -s -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
+  -X POST http://localhost:3000/api/v1/auth/login \
+  -H 'Content-Type: application/json' -H 'Origin: http://localhost:3000' \
+  -d '{"username":"alice","password":"<password>"}'
+curl -s -b "$COOKIE_JAR" http://localhost:3000/api/v1/connectors/jira
+curl -s -b "$COOKIE_JAR" http://localhost:3000/api/v1/connectors/jira/sites
+curl -s -b "$COOKIE_JAR" -X PUT http://localhost:3000/api/v1/connectors/jira/selection \
   -H 'Content-Type: application/json' -d '{"project_keys":["ENG"]}'
-curl -s -X POST http://127.0.0.1:8000/api/v1/connectors/jira/sync
+curl -s -b "$COOKIE_JAR" -X POST http://localhost:3000/api/v1/connectors/jira/sync
 ```
 
 Errors are typed: 422 for invalid input, 409 when the connection needs
@@ -727,13 +740,27 @@ A project groups the sources that describe one product (#372). Create it, then
 associate connector scopes with it. Projects live in the catalog database for
 `DOCUMENT_CATALOG_WORKSPACE_ID`.
 
+Project HTTP requires a signed-in membership-backed caller (#447). Provision a
+user, grant workspace access (membership only is fine on an empty catalog —
+`create` then self-grants the new project), log in through the Hub BFF, and
+reuse the cookie jar:
+
 ```bash
-curl -s -X POST http://127.0.0.1:8000/api/v1/projects \
+uv run python -m presentation.cli.create_user --username alice
+uv run python -m presentation.cli.grant_workspace_access \
+  --username alice --all-existing-projects
+
+COOKIE_JAR=$(mktemp)
+curl -s -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
+  -X POST http://localhost:3000/api/v1/auth/login \
+  -H 'Content-Type: application/json' -H 'Origin: http://localhost:3000' \
+  -d '{"username":"alice","password":"<password>"}'
+curl -s -b "$COOKIE_JAR" -X POST http://localhost:3000/api/v1/projects \
   -H 'Content-Type: application/json' -d '{"name":"Order Intake","slug":"proj"}'
-curl -s -X POST http://127.0.0.1:8000/api/v1/projects/<project_id>/sources \
+curl -s -b "$COOKIE_JAR" -X POST http://localhost:3000/api/v1/projects/<project_id>/sources \
   -H 'Content-Type: application/json' \
   -d '{"connector_id":"<id>","scope_kind":"repo","scope_value":"acme/proj-orders","roles":["backend","api_contract"]}'
-curl -s http://127.0.0.1:8000/api/v1/projects/<project_id>
+curl -s -b "$COOKIE_JAR" http://localhost:3000/api/v1/projects/<project_id>
 ```
 
 - Scopes: GitHub `repo` = `owner/name`; Jira `project_key` = `PROJ`. Google

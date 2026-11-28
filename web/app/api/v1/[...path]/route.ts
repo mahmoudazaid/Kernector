@@ -3,8 +3,8 @@ import { proxyAuthApi, redactAuthSecrets } from "@/lib/server/auth-proxy";
 
 /**
  * Cookie-forwarding BFF for product FastAPI routes (#447 / ADR 0014 §8).
- * More-specific handlers (auth, preferences, admin MCP, projects) take
- * precedence; this catch-all covers documents, chat, connectors/OAuth, etc.
+ * More-specific handlers (auth, preferences, admin MCP) take precedence;
+ * this catch-all covers projects, documents, chat, connectors/OAuth, etc.
  */
 async function proxyProductApi(
   request: Request,
